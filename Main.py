@@ -41,7 +41,7 @@ logger.debug(f"Environment variables: {os.environ}")
 
 # Load the Telegram bot token from environment variable
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
-BOT_USERNAME: Final = '@MasterBeanoBot'  # Bot's username (update if needed)
+BOT_USERNAME: Final = '@GameBot'  # Bot's username (update if needed)
 
 # File paths for persistent data storage
 ADMIN_DATA_FILE = 'admins.json'          # Stores admin/owner info
@@ -2488,25 +2488,34 @@ async def enable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #Start command
 @command_handler_wrapper(admin_only=False)
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /start command with a detailed welcome message."""
     if context.args and context.args[0].startswith('setstake_'):
         return  # This is handled by the game setup conversation handler
 
+    start_message = (
+        "Hello! I am GameBot. I'm here to help manage games, points, and rewards in your group.\n\n"
+        "Here are some commands to get you started:\n"
+        "- `/help`: Shows a detailed, interactive help menu.\n"
+        "- `/command`: Lists all available commands for the group you're in.\n\n"
+        "If you have any suggestions or find a bug, please contact my owner: @BeansOfBeano."
+    )
+
+    # In a group, just give a prompt to start a private chat.
     if update.effective_chat.type != "private":
         await update.message.reply_text("Please message me in private to use /start.")
         try:
+            # Also send the welcome message privately if possible
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
-                text='Hey there! What can I help you with?'
+                text=start_message
             )
         except Exception:
+            # Silently fail if user has not started a chat with the bot
             pass
         return
-    # Check if disabled in this group (should never trigger in private)
-    group_id = str(update.effective_chat.id)
-    disabled = load_disabled_commands()
-    if 'start' in disabled.get(group_id, []):
-        return
-    await update.message.reply_text('Hey there! What can I help you with?')
+
+    # In a private chat, send the full welcome message.
+    await update.message.reply_text(start_message)
 
 #Help command
 @command_handler_wrapper(admin_only=False)
