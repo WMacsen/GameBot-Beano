@@ -420,7 +420,7 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not response_lines:
             await update.message.reply_text("Admin list is already up to date for this group.")
         else:
-            await update.message.reply_text("\n".join(response_lines))
+            await update.message.reply_text("\n".join(response_lines), parse_mode='HTML')
 
     except Exception as e:
         logger.error(f"Failed to update admins: {e}", exc_info=True)
@@ -1008,7 +1008,8 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
 
     await context.bot.send_message(
         game['group_id'],
-        f"The game between {challenger_name} and {opponent_name} ended in a draw! Both players lose their stakes."
+        f"The game between {challenger_name} and {opponent_name} ended in a draw! Both players lose their stakes.",
+        parse_mode='HTML'
     )
 
     # Handle challenger's stake
@@ -1178,7 +1179,8 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
 
     await context.bot.send_message(
         game['group_id'],
-        f"Game between {challenger_name} and {opponent_name} has been cancelled due to inactivity. Both players lose their stakes."
+        f"Game between {challenger_name} and {opponent_name} has been cancelled due to inactivity. Both players lose their stakes.",
+        parse_mode='HTML'
     )
 
     # Handle challenger's stake
@@ -1424,7 +1426,8 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=int(opponent_id_str),
-            text=f"{attacker_name} fired at {coord_name}. {result_text}"
+            text=f"{attacker_name} fired at {coord_name}. {result_text}",
+            parse_mode='HTML'
         )
     except Exception as e:
         logger.warning(f"Failed to send attack result to victim: {e}")
@@ -3256,7 +3259,8 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
 
         await context.bot.send_message(
             chat_id=challenger_id,
-            text=f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name)}."
+            text=f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name)}.",
+            parse_mode='HTML'
         )
 
         if challenger_stake['type'] == 'points':
