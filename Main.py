@@ -60,6 +60,7 @@ def command_handler_wrapper(admin_only=False):
                 return
 
             user = update.effective_user
+            cache_user_profile(user) # Cache the user who triggered the command
             chat = update.effective_chat
             message_id = update.message.message_id
 
@@ -140,7 +141,14 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     titles[str(target_id)] = title
     save_user_titles(titles)
 
-    await update.message.reply_text(f"Title for user {target_id} has been set to '{title}'.")
+    try:
+        # Attempt to fetch the user to provide a nice confirmation message
+        member = await context.bot.get_chat_member(update.effective_chat.id, target_id)
+        display_name = get_display_name(target_id, member.user.full_name)
+        await update.message.reply_text(f"Title for {display_name} has been set.", parse_mode='HTML')
+    except Exception:
+        # Fallback in case the user is not in the group or something else goes wrong
+        await update.message.reply_text(f"Title for user {target_id} has been set to '{title}'.")
 
 @command_handler_wrapper(admin_only=True)
 async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -172,7 +180,7 @@ async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /viewstakes <user> - View all media staked by a user. """
     if not context.args:
-        await update.message.reply_text("Usage: /viewstakes <user_id>")
+        await update.message.reply_text("Usage: /viewstakes <@username or user_id>")
         return
 
     if update.effective_chat.type != "private":
@@ -180,11 +188,26 @@ async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     target_identifier = context.args[0]
-    if not target_identifier.isdigit():
-        await update.message.reply_text("Please use the user's ID to view their stakes.")
+    target_id = None
+
+    if target_identifier.isdigit():
+        target_id = int(target_identifier)
+    elif target_identifier.startswith('@'):
+        username_to_find = target_identifier[1:].lower()
+        profiles = load_user_profiles()
+        found = False
+        for uid, uname in profiles.items():
+            if uname.lower() == username_to_find:
+                target_id = int(uid)
+                found = True
+                break
+        if not found:
+            await update.message.reply_text(f"Could not find user {target_identifier} in my cache. Please use their user ID instead, or ensure I have seen them in a group recently.")
+            return
+    else:
+        await update.message.reply_text("Please provide a valid user ID or a @username starting with '@'.")
         return
 
-    target_id = int(target_identifier)
     stakes = load_media_stakes()
     user_stakes = stakes.get(str(target_id))
 
@@ -217,21 +240,27 @@ def load_admin_data():
     if os.path.exists(ADMIN_DATA_FILE):
         with open(ADMIN_DATA_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            # Always ensure owner is in admin list
-            if str(OWNER_ID) not in data.get('admins', []):
-                data['admins'] = list(set(data.get('admins', []) + [str(OWNER_ID)]))
-            data['owner'] = str(OWNER_ID)
-            logger.debug(f"Loaded admin data: {data}")
-            return data
-    # Default: owner is admin
-    logger.debug("No admin data file found, using default owner as admin.")
-    return {'owner': str(OWNER_ID), 'admins': [str(OWNER_ID)]}
+    else:
+        data = {}
+
+    # Ensure the structure is correct
+    if 'owner' not in data:
+        data['owner'] = str(OWNER_ID)
+    if 'admins' not in data or not isinstance(data['admins'], list):
+        data['admins'] = []
+
+    # Always ensure owner is an admin
+    if str(OWNER_ID) not in data['admins']:
+        data['admins'].append(str(OWNER_ID))
+
+    logger.debug(f"Loaded admin data: {data}")
+    return data
 
 def save_admin_data(data):
     """Save admin and owner data to file. Ensures owner is always in admin list."""
     # Always ensure owner is in admin list
-    if str(data['owner']) not in data['admins']:
-        data['admins'].append(str(data['owner']))
+    if str(OWNER_ID) not in data.get('admins', []):
+        data['admins'].append(str(OWNER_ID))
     with open(ADMIN_DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     logger.debug(f"Saved admin data: {data}")
@@ -239,7 +268,7 @@ def save_admin_data(data):
 def is_owner(user_id):
     """Check if the user is the owner."""
     data = load_admin_data()
-    result = str(user_id) == str(data['owner'])
+    result = str(user_id) == str(data.get('owner'))
     logger.debug(f"is_owner({user_id}) -> {result}")
     return result
 
@@ -257,9 +286,10 @@ def get_display_name(user_id: int, full_name: str) -> str:
 def is_admin(user_id):
     """Check if the user is an admin or the owner."""
     data = load_admin_data()
-    result = str(user_id) in data['admins'] or str(user_id) == str(data['owner'])
-    logger.debug(f"is_admin({user_id}) -> {result}")
-    return result
+    # Check if the user is the owner or in the global admin list.
+    is_admin_result = str(user_id) == str(data.get('owner')) or str(user_id) in data.get('admins', [])
+    logger.debug(f"is_admin({user_id}) -> {is_admin_result}")
+    return is_admin_result
 
 @command_handler_wrapper(admin_only=True)
 async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -281,6 +311,7 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_admins_found = []
 
         for admin in admins:
+            cache_user_profile(admin.user)
             admin_id_str = str(admin.user.id)
             if admin_id_str not in current_admins:
                 current_admins.add(admin_id_str)
@@ -296,6 +327,35 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Failed to update admins: {e}")
         await update.message.reply_text(f"An error occurred while updating admins: {e}")
+
+@command_handler_wrapper(admin_only=True)
+async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /removeadmin <user_id> - (Owner only) Removes a user from the global admin list. """
+    if not is_owner(update.effective_user.id):
+        await update.message.reply_text("This command is for the bot owner only.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /removeadmin <user_id>")
+        return
+
+    try:
+        target_id = str(int(context.args[0]))
+    except ValueError:
+        await update.message.reply_text("Please provide a valid user ID.")
+        return
+
+    if target_id == str(OWNER_ID):
+        await update.message.reply_text("You cannot remove the owner.")
+        return
+
+    admin_data = load_admin_data()
+    if target_id in admin_data.get('admins', []):
+        admin_data['admins'].remove(target_id)
+        save_admin_data(admin_data)
+        await update.message.reply_text(f"User {target_id} has been removed from the admin list.")
+    else:
+        await update.message.reply_text(f"User {target_id} is not in the admin list.")
 
 async def get_user_id_by_username(context, chat_id, username) -> str:
     """Get a user's Telegram ID by their username in a chat."""
@@ -1441,6 +1501,29 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
 PUNISHMENTS_DATA_FILE = 'punishments.json'
 PUNISHMENT_STATUS_FILE = 'punishment_status.json'
 MEDIA_STAKES_FILE = 'media_stakes.json'
+USER_PROFILES_FILE = 'user_profiles.json'
+
+def load_user_profiles():
+    if os.path.exists(USER_PROFILES_FILE):
+        with open(USER_PROFILES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_user_profiles(data):
+    with open(USER_PROFILES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def cache_user_profile(user: User):
+    """Caches a user's ID and username."""
+    if not user or not user.id or not user.username:
+        return
+
+    profiles = load_user_profiles()
+    # Only update if the username has changed or the user is new
+    if str(user.id) not in profiles or profiles[str(user.id)] != user.username:
+        profiles[str(user.id)] = user.username
+        save_user_profiles(profiles)
+        logger.debug(f"Cached profile for user {user.id} (@{user.username})")
 
 def load_media_stakes():
     if os.path.exists(MEDIA_STAKES_FILE):
@@ -1831,6 +1914,8 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     challenger_user = update.effective_user
     opponent_user = update.message.reply_to_message.from_user
+    cache_user_profile(challenger_user)
+    cache_user_profile(opponent_user)
 
     if challenger_user.id == opponent_user.id:
         await update.message.reply_text("You cannot challenge yourself.")
@@ -2192,7 +2277,7 @@ COMMAND_MAP = {
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
     'title': {'is_admin': True}, 'removetitle': {'is_admin': True},
     'update': {'is_admin': True}, 'viewstakes': {'is_admin': True},
-    'game': {'is_admin': False},
+    'game': {'is_admin': False}, 'removeadmin': {'is_admin': True},
 }
 
 @command_handler_wrapper(admin_only=False)
@@ -2370,24 +2455,14 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif topic == 'help_games':
         text = """
 <b>Game Commands</b>
-- /newgame (reply to user): Challenge someone to a game (Dice, Connect Four, Battleship, Tic-Tac-Toe).
-- /loser (admin only): Declare a user as the loser of a game.
-- /cleangames (admin only): Clean up old game data.
+- /newgame (reply to user): Challenge someone to a game of Dice, Connect Four, Battleship, or Tic-Tac-Toe.
 - /chance: Play a daily game of chance for points or other outcomes.
         """
     elif topic == 'help_points':
         text = """
 <b>Point & Reward System</b>
 - /point: Check your own points.
-- /reward: View and buy available rewards.
-- /top5 (admin only): See the top 5 users with the most points.
-- /addpoints (admin only): Add points to a user.
-- /removepoints (admin only): Remove points from a user.
-- /addreward (admin only): Add a new reward.
-- /removereward (admin only): Remove a reward.
-- /punishment (admin only): List punishments for low points.
-- /addpunishment (admin only): Add a new punishment.
-- /removepunishment (admin only): Remove a punishment.
+- /reward: View and buy available rewards with your points.
         """
     elif topic == 'help_admin':
         if not is_admin(user_id):
@@ -2395,11 +2470,22 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         text = """
 <b>Admin Commands</b>
-- /title <user> <title>: Sets a custom title for a user.
-- /removetitle <user>: Removes a title from a user.
-- /update: (Owner only, in group) Updates the bot's list of admins from the group chat.
-- /viewstakes <user_id>: (Private chat only) View all media staked by a user.
-- /addpoints, /removepoints, /addreward, /removereward, etc. are also available. Use /command in a group for a full list.
+
+- /title &lt;user_id&gt; &lt;title&gt;: Sets a custom title for a user.
+- /removetitle &lt;user_id&gt;: Removes a title from a user.
+- /update: (Owner only, in group) Adds all admins from the current group to the bot's global admin list.
+- /removeadmin &lt;user_id&gt;: (Owner only) Removes a user from the bot's global admin list.
+- /viewstakes &lt;user_id or @username&gt;: (Private chat only) View all media staked by a user.
+- /loser &lt;user_id&gt;: Declare a user as the loser of the current game.
+- /cleangames: Cleans up old, completed game data.
+- /top5: See the top 5 users with the most points.
+- /addpoints &lt;user_id&gt; &lt;amount&gt;: Add points to a user.
+- /removepoints &lt;user_id&gt; &lt;amount&gt;: Remove points from a user.
+- /addreward &lt;name&gt; &lt;cost&gt;: Add a new reward to the group's shop.
+- /removereward &lt;name&gt;: Remove a reward from the shop.
+- /addpunishment &lt;threshold&gt; &lt;message&gt;: Add a punishment for falling below a point threshold.
+- /removepunishment &lt;message&gt;: Remove a punishment.
+- /punishment: List all configured punishments for the group.
         """
     elif topic == 'help_back':
         main_menu_keyboard = [
@@ -3108,6 +3194,7 @@ if __name__ == '__main__':
     add_command(app, 'removetitle', removetitle_command)
     add_command(app, 'update', update_command)
     add_command(app, 'viewstakes', viewstakes_command)
+    add_command(app, 'removeadmin', removeadmin_command)
 
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
