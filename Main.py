@@ -281,31 +281,39 @@ async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             logger.error(f"Failed to send stake for user {target_id}: {e}")
 
 def load_admin_data():
-    """Load admin and owner data from file. Ensures owner is always in admin list."""
-    if os.path.exists(ADMIN_DATA_FILE):
-        with open(ADMIN_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    else:
-        data = {}
+    """Loads admin data, migrating from old list format to new dict format if necessary."""
+    if not os.path.exists(ADMIN_DATA_FILE):
+        return {'owner': str(OWNER_ID), 'admins': {}}
 
-    # Ensure the structure is correct
+    with open(ADMIN_DATA_FILE, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # --- Migration from old format ---
+    if isinstance(data.get('admins'), list):
+        logger.warning("Old admin file format detected. Migrating to new format.")
+        old_admins = data['admins']
+        data['admins'] = {}
+        if str(OWNER_ID) in old_admins:
+             old_admins.remove(str(OWNER_ID))
+        if old_admins:
+             # We don't know which group these admins came from, so we assign them to a legacy group.
+             # The next /update in their actual group will fix this.
+             for admin_id in old_admins:
+                 data['admins'][str(admin_id)] = ["legacy_group"]
+        save_admin_data(data)
+        logger.info("Admin file migrated successfully.")
+    # --- End Migration ---
+
     if 'owner' not in data:
         data['owner'] = str(OWNER_ID)
-    if 'admins' not in data or not isinstance(data['admins'], list):
-        data['admins'] = []
-
-    # Always ensure owner is an admin
-    if str(OWNER_ID) not in data['admins']:
-        data['admins'].append(str(OWNER_ID))
+    if 'admins' not in data:
+        data['admins'] = {}
 
     logger.debug(f"Loaded admin data: {data}")
     return data
 
 def save_admin_data(data):
-    """Save admin and owner data to file. Ensures owner is always in admin list."""
-    # Always ensure owner is in admin list
-    if str(OWNER_ID) not in data.get('admins', []):
-        data['admins'].append(str(OWNER_ID))
+    """Saves admin and owner data to file."""
     with open(ADMIN_DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     logger.debug(f"Saved admin data: {data}")
@@ -330,15 +338,21 @@ def get_display_name(user_id: int, full_name: str) -> str:
 
 def is_admin(user_id):
     """Check if the user is an admin or the owner."""
-    data = load_admin_data()
-    # Check if the user is the owner or in the global admin list.
-    is_admin_result = str(user_id) == str(data.get('owner')) or str(user_id) in data.get('admins', [])
-    logger.debug(f"is_admin({user_id}) -> {is_admin_result}")
-    return is_admin_result
+    admin_data = load_admin_data()
+    user_id_str = str(user_id)
+
+    if user_id_str == admin_data.get('owner'):
+        return True
+
+    # Check if the user is a key in the admins dictionary and has at least one group.
+    if user_id_str in admin_data.get('admins', {}) and admin_data['admins'][user_id_str]:
+        return True
+
+    return False
 
 @command_handler_wrapper(admin_only=True)
 async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /update - (Owner only) Syncs group admins to the global admin list. """
+    """ /update - (Owner only) Syncs the admin list for the current group. """
     if not is_owner(update.effective_user.id):
         await update.message.reply_text("This command is for the bot owner only.")
         return
@@ -347,60 +361,63 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("This command can only be used in a group.")
         return
 
-    chat_id = update.effective_chat.id
+    chat_id_str = str(update.effective_chat.id)
+
     try:
-        admins = await context.bot.get_chat_administrators(chat_id)
+        # 1. Get current admins from Telegram
+        tg_admins = await context.bot.get_chat_administrators(chat_id_str)
+        tg_admin_ids = {str(admin.user.id) for admin in tg_admins}
+
+        # 2. Load our stored data
         admin_data = load_admin_data()
+        stored_admins = admin_data.get('admins', {})
 
-        current_admins = set(admin_data.get('admins', []))
-        new_admins_found = []
+        # 3. Find admins for this specific group in our records
+        stored_group_admin_ids = {
+            uid for uid, groups in stored_admins.items() if chat_id_str in groups
+        }
 
-        for admin in admins:
-            cache_user_profile(admin.user)
-            admin_id_str = str(admin.user.id)
-            if admin_id_str not in current_admins:
-                current_admins.add(admin_id_str)
-                new_admins_found.append(admin.user.full_name)
+        # 4. Determine who was added and who was removed
+        added_ids = tg_admin_ids - stored_group_admin_ids
+        removed_ids = stored_group_admin_ids - tg_admin_ids
 
-        if new_admins_found:
-            admin_data['admins'] = list(current_admins)
-            save_admin_data(admin_data)
-            await update.message.reply_text(f"Admins updated. New admins added:\n" + "\n".join(html.escape(name) for name in new_admins_found))
+        # 5. Update the stored data
+        for admin_id in added_ids:
+            stored_admins.setdefault(admin_id, []).append(chat_id_str)
+
+        for admin_id in removed_ids:
+            if admin_id in stored_admins and chat_id_str in stored_admins[admin_id]:
+                stored_admins[admin_id].remove(chat_id_str)
+            # If the user is no longer an admin in any group, remove them entirely
+            if admin_id in stored_admins and not stored_admins[admin_id]:
+                del stored_admins[admin_id]
+
+        save_admin_data(admin_data)
+
+        # 6. Report changes
+        response_lines = []
+        if added_ids:
+            added_names = []
+            for admin_id in added_ids:
+                user = next((a.user for a in tg_admins if str(a.user.id) == admin_id), None)
+                if user:
+                    added_names.append(user.full_name)
+                    cache_user_profile(user)
+            if added_names:
+                response_lines.append("New admins added: " + ", ".join(html.escape(name) for name in added_names))
+
+        if removed_ids:
+            # We can't get user objects for removed admins easily, so just use IDs
+            response_lines.append("Admins removed from this group: " + ", ".join(removed_ids))
+
+        if not response_lines:
+            await update.message.reply_text("Admin list is already up to date for this group.")
         else:
-            await update.message.reply_text("No new admins found in this group.")
+            await update.message.reply_text("\n".join(response_lines))
 
     except Exception as e:
-        logger.error(f"Failed to update admins: {e}")
+        logger.error(f"Failed to update admins: {e}", exc_info=True)
         await update.message.reply_text(f"An error occurred while updating admins: {e}")
-
-@command_handler_wrapper(admin_only=True)
-async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /removeadmin <user_id> - (Owner only) Removes a user from the global admin list. """
-    if not is_owner(update.effective_user.id):
-        await update.message.reply_text("This command is for the bot owner only.")
-        return
-
-    if not context.args:
-        await update.message.reply_text("Usage: /removeadmin <user_id>")
-        return
-
-    try:
-        target_id = str(int(context.args[0]))
-    except ValueError:
-        await update.message.reply_text("Please provide a valid user ID.")
-        return
-
-    if target_id == str(OWNER_ID):
-        await update.message.reply_text("You cannot remove the owner.")
-        return
-
-    admin_data = load_admin_data()
-    if target_id in admin_data.get('admins', []):
-        admin_data['admins'].remove(target_id)
-        save_admin_data(admin_data)
-        await update.message.reply_text(f"User {target_id} has been removed from the admin list.")
-    else:
-        await update.message.reply_text(f"User {target_id} is not in the admin list.")
 
 async def get_user_id_by_username(context, chat_id, username) -> str:
     """Get a user's Telegram ID by their username, using the profile cache."""
@@ -2335,7 +2352,7 @@ COMMAND_MAP = {
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
     'title': {'is_admin': True}, 'removetitle': {'is_admin': True},
     'update': {'is_admin': True}, 'viewstakes': {'is_admin': True},
-    'game': {'is_admin': False}, 'removeadmin': {'is_admin': True},
+    'game': {'is_admin': False},
 }
 
 @command_handler_wrapper(admin_only=False)
@@ -3313,7 +3330,6 @@ if __name__ == '__main__':
     add_command(app, 'removetitle', removetitle_command)
     add_command(app, 'update', update_command)
     add_command(app, 'viewstakes', viewstakes_command)
-    add_command(app, 'removeadmin', removeadmin_command)
 
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
