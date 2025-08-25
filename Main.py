@@ -1595,7 +1595,6 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{challenger_name} has challenged {opponent_name}! {challenger_name}, please check your private messages to set up the game.",
         parse_mode='HTML'
     )
-    save_games_data(games_data)
 
     try:
         keyboard = [[InlineKeyboardButton("Start Game Setup", callback_data=f"game:setup:start:{game_id}")]]
