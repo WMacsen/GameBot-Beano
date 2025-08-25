@@ -200,7 +200,7 @@ def is_admin(user_id):
 
 async def get_user_id_by_username(context, chat_id, username) -> str:
     """Get a user's Telegram ID by their username in a chat."""
-    async for member in await context.bot.get_chat_administrators(chat_id):
+    for member in await context.bot.get_chat_administrators(chat_id):
         if member.user.username and member.user.username.lower() == username.lower().lstrip('@'):
             logger.debug(f"Found user ID {member.user.id} for username {username}")
             return str(member.user.id)
@@ -560,9 +560,12 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
     for msg in messages_to_delete:
         logger.debug(f"Deleting message {msg['message_id']} in chat {msg['chat_id']}")
         try:
-            await context.bot.delete_message(chat_id=msg['chat_id'], message_id=msg['message_id'])
+            success = await context.bot.delete_message(chat_id=msg['chat_id'], message_id=msg['message_id'])
+            if not success:
+                logger.error(f"Deletion of message {msg['message_id']} returned False but did not raise exception.")
         except Exception as e:
             logger.error(f"Explicitly failed to delete message {msg['message_id']}", exc_info=True)
+        await asyncio.sleep(0.5) # Add a small delay to avoid rate limiting
 
     if game_id in games_data:
         games_data[game_id]['messages_to_delete'] = []
