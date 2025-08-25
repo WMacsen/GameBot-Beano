@@ -2787,6 +2787,16 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
         group_id = games_data[game_id]['group_id']
 
         user_points = get_user_points(group_id, user_id)
+
+        if points <= 0:
+            await send_and_track_message(
+                context,
+                update.effective_chat.id,
+                game_id,
+                "You must stake a positive number of points. Please enter a valid amount."
+            )
+            return STAKE_SUBMISSION_POINTS
+
         if user_points < points:
             await send_and_track_message(
                 context,
