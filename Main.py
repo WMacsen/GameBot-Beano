@@ -397,18 +397,23 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 6. Report changes
         response_lines = []
         if added_ids:
-            added_names = []
+            added_mentions = []
             for admin_id in added_ids:
                 user = next((a.user for a in tg_admins if str(a.user.id) == admin_id), None)
                 if user:
-                    added_names.append(user.full_name)
+                    added_mentions.append(get_display_name(user.id, user.full_name))
                     cache_user_profile(user)
-            if added_names:
-                response_lines.append("New admins added: " + ", ".join(html.escape(name) for name in added_names))
+            if added_mentions:
+                response_lines.append("New admins added: " + ", ".join(added_mentions))
 
         if removed_ids:
-            # We can't get user objects for removed admins easily, so just use IDs
-            response_lines.append("Admins removed from this group: " + ", ".join(removed_ids))
+            removed_names = []
+            profiles = load_user_profiles()
+            for admin_id in removed_ids:
+                # Try to get the name from the cache, fall back to ID if not found
+                name = profiles.get(admin_id, f"User ID {admin_id}")
+                removed_names.append(html.escape(name))
+            response_lines.append("Admins removed from this group: " + ", ".join(removed_names))
 
         if not response_lines:
             await update.message.reply_text("Admin list is already up to date for this group.")
