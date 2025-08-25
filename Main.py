@@ -41,11 +41,13 @@ logger.debug(f"Environment variables: {os.environ}")
 
 # Load the Telegram bot token from environment variable
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
-BOT_USERNAME: Final = '@GameBot'  # Bot's username (update if needed)
+# IMPORTANT: UPDATE THESE VALUES FOR YOUR BOT
+BOT_USERNAME: Final = '@YourBotUsername'  # <--- CHANGE THIS to your bot's username
+OWNER_ID = 123456789  # <--- CHANGE THIS to your own Telegram User ID
+# END IMPORTANT
 
 # File paths for persistent data storage
 ADMIN_DATA_FILE = 'admins.json'          # Stores admin/owner info
-OWNER_ID = 7237569475  # Your Telegram ID (change to your actual Telegram user ID)
 
 
 # =========================
@@ -2519,7 +2521,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Here are some commands to get you started:\n"
         "- `/help`: Shows a detailed, interactive help menu.\n"
         "- `/command`: Lists all available commands for the group you're in.\n\n"
-        "If you have any suggestions or find a bug, please contact my owner: @BeansOfBeano."
+        "If you have any suggestions or want your own version of this bot, please contact the developer: @BeansOfBeano."
     )
 
     # In a group, just give a prompt to start a private chat.
