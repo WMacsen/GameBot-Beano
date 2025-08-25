@@ -536,3 +536,370 @@ telegram.error.BadRequest: Message to edit not found
 </pre>
 2025-08-24 21:59:41,537 - __main__ - DEBUG - No admin data file found, using default owner as admin.
 2025-08-24 21:59:41,538 - __main__ - DEBUG - is_admin(1268195310) -> False
+2025-08-25 09:03:05,505 - Main - DEBUG - Environment variables: environ({'SHELL': '/bin/bash', 'PYENV_HOOK_PATH': '/home/jules/.pyenv/pyenv.d:/usr/etc/pyenv.d:/usr/local/etc/pyenv.d:/etc/pyenv.d:/usr/lib/pyenv/hooks:/home/jules/.pyenv/plugins/pyenv-virtualenv/etc/pyenv.d', 'SUDO_GID': '1001', 'NVM_INC': '/home/jules/.nvm/versions/node/v22.17.1/include/node', 'TERM_PROGRAM_VERSION': '3.4', 'TMUX': '/tmp/tmux-1001/default,1959,0', 'JAVA_HOME': '/usr/lib/jvm/java-21-openjdk-amd64', 'SUDO_COMMAND': '/usr/bin/bash -c echo "${BASHPID}"\ntmux new-session -d -s default -c /app && tmux set-option remain-on-exit on', 'SUDO_USER': 'jules', 'PYENV_VERSION': '3.12.11', 'PWD': '/app', 'LOGNAME': 'jules', 'HOME': '/home/jules', 'LANG': 'C.UTF-8', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'PYENV_DIR': '/app', 'NVM_DIR': '/home/jules/.nvm', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'TERM': 'tmux-256color', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'USER': 'jules', 'TMUX_PANE': '%0', 'SHLVL': '2', 'NVM_CD_FLAGS': '', 'PYENV_ROOT': '/home/jules/.pyenv', 'DEBUGINFOD_URLS': 'https://debuginfod.ubuntu.com ', 'BUN_INSTALL': '/usr/local/bun', 'PATH': '/home/jules/.pyenv/versions/3.12.11/bin:/home/jules/.pyenv/libexec:/home/jules/.pyenv/plugins/python-build/bin:/home/jules/.pyenv/plugins/pyenv-virtualenv/bin:/home/jules/.pyenv/plugins/pyenv-update/bin:/home/jules/.pyenv/plugins/pyenv-doctor/bin:/home/jules/.nvm/versions/node/v22.17.1/bin:/home/jules/.pyenv/shims:/home/jules/.pyenv/bin:/home/jules/.local/bin:/go/bin:/usr/local/go/bin:/usr/share/gradle/bin:/usr/share/maven/bin:/home/jules/.local/bin:/home/jules/.cargo/bin:/usr/local/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin', 'SUDO_UID': '1001', 'MAIL': '/var/mail/jules', 'NVM_BIN': '/home/jules/.nvm/versions/node/v22.17.1/bin', 'TERM_PROGRAM': 'tmux'})
+2025-08-25 09:03:05,514 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,557 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,557 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,567 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,567 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,573 - Main - DEBUG - Set points for user 1 in group 101 to 240
+2025-08-25 09:03:05,573 - Main - DEBUG - Added 120 points for user 1 in group 101 (new total: 240)
+2025-08-25 09:03:05,575 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,575 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,581 - Main - DEBUG - Set points for user 1 in group 101 to 150
+2025-08-25 09:03:05,581 - Main - DEBUG - Added 50 points for user 1 in group 101 (new total: 150)
+2025-08-25 09:03:05,583 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,583 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,591 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,591 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,596 - Main - INFO - Command 'reward' is disabled in group 101. Aborting.
+2025-08-25 09:03:05,598 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,598 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,605 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,605 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,614 - Main - DEBUG - In stake_submission_points
+2025-08-25 09:03:05,616 - Main - DEBUG - Tracking message <AsyncMock name='mock.bot.send_message().message_id' id='139769175791072'> in chat 101 for game test-game-123
+2025-08-25 09:03:05,628 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,629 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,637 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,637 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,638 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:03:05,641 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:03:05,643 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,644 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,645 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:03:05,651 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,651 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,654 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:03:05,655 - Main - DEBUG - Added -20 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:03:05,655 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:03:05,657 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,658 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,666 - Main - DEBUG - Tracking message <AsyncMock name='mock.bot.send_message().message_id' id='139769176095872'> in chat 101 for game 563e6f32-8567-45f5-9b09-698e9076b74a
+2025-08-25 09:03:05,670 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,670 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,694 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,694 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,699 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:03:05,699 - Main - DEBUG - Added -60 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:03:05,700 - Main - DEBUG - Added triggered punishment 'You are grounded.' for user 1 in group 101
+2025-08-25 09:03:05,701 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:03:05,703 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,703 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,710 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,711 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,719 - Main - DEBUG - Set points for user 1 in group 101 to 50
+2025-08-25 09:03:05,719 - Main - DEBUG - Added -50 points for user 1 in group 101 (new total: 50)
+2025-08-25 09:03:05,721 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,721 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,729 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,729 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,736 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,737 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,743 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,744 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,754 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:03:05,754 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:03:05,756 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:03:05,763 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,698 - Main - DEBUG - Environment variables: environ({'SHELL': '/bin/bash', 'PYENV_HOOK_PATH': '/home/jules/.pyenv/pyenv.d:/usr/etc/pyenv.d:/usr/local/etc/pyenv.d:/etc/pyenv.d:/usr/lib/pyenv/hooks:/home/jules/.pyenv/plugins/pyenv-virtualenv/etc/pyenv.d', 'SUDO_GID': '1001', 'NVM_INC': '/home/jules/.nvm/versions/node/v22.17.1/include/node', 'TERM_PROGRAM_VERSION': '3.4', 'TMUX': '/tmp/tmux-1001/default,1959,0', 'JAVA_HOME': '/usr/lib/jvm/java-21-openjdk-amd64', 'SUDO_COMMAND': '/usr/bin/bash -c echo "${BASHPID}"\ntmux new-session -d -s default -c /app && tmux set-option remain-on-exit on', 'SUDO_USER': 'jules', 'PYENV_VERSION': '3.12.11', 'PWD': '/app', 'LOGNAME': 'jules', 'HOME': '/home/jules', 'LANG': 'C.UTF-8', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'PYENV_DIR': '/app', 'NVM_DIR': '/home/jules/.nvm', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'TERM': 'tmux-256color', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'USER': 'jules', 'TMUX_PANE': '%0', 'SHLVL': '2', 'NVM_CD_FLAGS': '', 'PYENV_ROOT': '/home/jules/.pyenv', 'DEBUGINFOD_URLS': 'https://debuginfod.ubuntu.com ', 'BUN_INSTALL': '/usr/local/bun', 'PATH': '/home/jules/.pyenv/versions/3.12.11/bin:/home/jules/.pyenv/libexec:/home/jules/.pyenv/plugins/python-build/bin:/home/jules/.pyenv/plugins/pyenv-virtualenv/bin:/home/jules/.pyenv/plugins/pyenv-update/bin:/home/jules/.pyenv/plugins/pyenv-doctor/bin:/home/jules/.nvm/versions/node/v22.17.1/bin:/home/jules/.pyenv/shims:/home/jules/.pyenv/bin:/home/jules/.local/bin:/go/bin:/usr/local/go/bin:/usr/share/gradle/bin:/usr/share/maven/bin:/home/jules/.local/bin:/home/jules/.cargo/bin:/usr/local/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin', 'SUDO_UID': '1001', 'MAIL': '/var/mail/jules', 'NVM_BIN': '/home/jules/.nvm/versions/node/v22.17.1/bin', 'TERM_PROGRAM': 'tmux'})
+2025-08-25 09:05:54,700 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,710 - Main - DEBUG - Set points for user 2 in group 101 to 150
+2025-08-25 09:05:54,711 - Main - DEBUG - Added 100 points for user 2 in group 101 (new total: 150)
+2025-08-25 09:05:54,713 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,713 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,724 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,724 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,730 - Main - DEBUG - Set points for user 1 in group 101 to 240
+2025-08-25 09:05:54,730 - Main - DEBUG - Added 120 points for user 1 in group 101 (new total: 240)
+2025-08-25 09:05:54,732 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,732 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,738 - Main - DEBUG - Set points for user 1 in group 101 to 150
+2025-08-25 09:05:54,738 - Main - DEBUG - Added 50 points for user 1 in group 101 (new total: 150)
+2025-08-25 09:05:54,740 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,740 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,748 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,749 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,754 - Main - INFO - Command 'reward' is disabled in group 101. Aborting.
+2025-08-25 09:05:54,756 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,756 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,763 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,763 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,772 - Main - DEBUG - In stake_submission_points
+2025-08-25 09:05:54,774 - Main - DEBUG - Tracking message 456 in chat 101 for game test-game-123
+2025-08-25 09:05:54,778 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,779 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,787 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,787 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,788 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:05:54,791 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:05:54,793 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,793 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,795 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:05:54,799 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:05:54,801 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,801 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,804 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:05:54,805 - Main - DEBUG - Added -20 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:05:54,805 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:05:54,808 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,808 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,816 - Main - DEBUG - Tracking message 999 in chat 101 for game 65868e12-f210-438e-bbf0-6a754a983be2
+2025-08-25 09:05:54,820 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,820 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,845 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,845 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,850 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:05:54,850 - Main - DEBUG - Added -60 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:05:54,851 - Main - DEBUG - Added triggered punishment 'You are grounded.' for user 1 in group 101
+2025-08-25 09:05:54,852 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:05:54,854 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,854 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,862 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,863 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,871 - Main - DEBUG - Set points for user 1 in group 101 to 50
+2025-08-25 09:05:54,871 - Main - DEBUG - Added -50 points for user 1 in group 101 (new total: 50)
+2025-08-25 09:05:54,873 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,873 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,882 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,882 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,889 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,890 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,896 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,896 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,906 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:05:54,906 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:05:54,909 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:05:54,916 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,525 - Main - DEBUG - Environment variables: environ({'SHELL': '/bin/bash', 'PYENV_HOOK_PATH': '/home/jules/.pyenv/pyenv.d:/usr/etc/pyenv.d:/usr/local/etc/pyenv.d:/etc/pyenv.d:/usr/lib/pyenv/hooks:/home/jules/.pyenv/plugins/pyenv-virtualenv/etc/pyenv.d', 'SUDO_GID': '1001', 'NVM_INC': '/home/jules/.nvm/versions/node/v22.17.1/include/node', 'TERM_PROGRAM_VERSION': '3.4', 'TMUX': '/tmp/tmux-1001/default,1959,0', 'JAVA_HOME': '/usr/lib/jvm/java-21-openjdk-amd64', 'SUDO_COMMAND': '/usr/bin/bash -c echo "${BASHPID}"\ntmux new-session -d -s default -c /app && tmux set-option remain-on-exit on', 'SUDO_USER': 'jules', 'PYENV_VERSION': '3.12.11', 'PWD': '/app', 'LOGNAME': 'jules', 'HOME': '/home/jules', 'LANG': 'C.UTF-8', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'PYENV_DIR': '/app', 'NVM_DIR': '/home/jules/.nvm', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'TERM': 'tmux-256color', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'USER': 'jules', 'TMUX_PANE': '%0', 'SHLVL': '2', 'NVM_CD_FLAGS': '', 'PYENV_ROOT': '/home/jules/.pyenv', 'DEBUGINFOD_URLS': 'https://debuginfod.ubuntu.com ', 'BUN_INSTALL': '/usr/local/bun', 'PATH': '/home/jules/.pyenv/versions/3.12.11/bin:/home/jules/.pyenv/libexec:/home/jules/.pyenv/plugins/python-build/bin:/home/jules/.pyenv/plugins/pyenv-virtualenv/bin:/home/jules/.pyenv/plugins/pyenv-update/bin:/home/jules/.pyenv/plugins/pyenv-doctor/bin:/home/jules/.nvm/versions/node/v22.17.1/bin:/home/jules/.pyenv/shims:/home/jules/.pyenv/bin:/home/jules/.local/bin:/go/bin:/usr/local/go/bin:/usr/share/gradle/bin:/usr/share/maven/bin:/home/jules/.local/bin:/home/jules/.cargo/bin:/usr/local/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin', 'SUDO_UID': '1001', 'MAIL': '/var/mail/jules', 'NVM_BIN': '/home/jules/.nvm/versions/node/v22.17.1/bin', 'TERM_PROGRAM': 'tmux'})
+2025-08-25 09:13:56,535 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,569 - Main - DEBUG - Set points for user 2 in group 101 to 150
+2025-08-25 09:13:56,569 - Main - DEBUG - Added 100 points for user 2 in group 101 (new total: 150)
+2025-08-25 09:13:56,575 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,575 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,585 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,586 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,591 - Main - DEBUG - Set points for user 1 in group 101 to 240
+2025-08-25 09:13:56,591 - Main - DEBUG - Added 120 points for user 1 in group 101 (new total: 240)
+2025-08-25 09:13:56,593 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,594 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,601 - Main - DEBUG - Set points for user 1 in group 101 to 150
+2025-08-25 09:13:56,601 - Main - DEBUG - Added 50 points for user 1 in group 101 (new total: 150)
+2025-08-25 09:13:56,603 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,603 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,611 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,611 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,615 - Main - INFO - Command 'reward' is disabled in group 101. Aborting.
+2025-08-25 09:13:56,617 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,617 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,624 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,624 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,632 - Main - DEBUG - In stake_submission_points
+2025-08-25 09:13:56,634 - Main - DEBUG - Tracking message 456 in chat 101 for game test-game-123
+2025-08-25 09:13:56,647 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,647 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,654 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,655 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,656 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:13:56,659 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:13:56,661 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,661 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,662 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:13:56,666 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:13:56,668 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,668 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,671 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:13:56,672 - Main - DEBUG - Added -20 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:13:56,672 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:13:56,674 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,675 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,682 - Main - DEBUG - Tracking message 999 in chat 101 for game 56c1829c-3cc7-4757-8f3f-4b4ebb0bb5ca
+2025-08-25 09:13:56,686 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,686 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,709 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,709 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,714 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:13:56,714 - Main - DEBUG - Added -60 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:13:56,715 - Main - DEBUG - Added triggered punishment 'You are grounded.' for user 1 in group 101
+2025-08-25 09:13:56,716 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:13:56,718 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,718 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,726 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,726 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,734 - Main - DEBUG - Set points for user 1 in group 101 to 50
+2025-08-25 09:13:56,734 - Main - DEBUG - Added -50 points for user 1 in group 101 (new total: 50)
+2025-08-25 09:13:56,736 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,736 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,743 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,744 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,751 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,751 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,757 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,757 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,767 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:13:56,767 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:13:56,769 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:13:56,772 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:13:56,772 - Main - DEBUG - is_owner(1) -> True
+2025-08-25 09:13:56,773 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:13:56,773 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'11': ['101'], '1': ['101'], '10': ['101']}}
+2025-08-25 09:13:56,774 - Main - DEBUG - Cached profile for user 11 (@admin_two)
+2025-08-25 09:13:56,774 - Main - DEBUG - Cached profile for user 10 (@admin_one)
+2025-08-25 09:13:56,775 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'11': ['101'], '1': ['101'], '10': ['101']}}
+2025-08-25 09:13:56,777 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:31,960 - Main - DEBUG - Environment variables: environ({'SHELL': '/bin/bash', 'PYENV_HOOK_PATH': '/home/jules/.pyenv/pyenv.d:/usr/etc/pyenv.d:/usr/local/etc/pyenv.d:/etc/pyenv.d:/usr/lib/pyenv/hooks:/home/jules/.pyenv/plugins/pyenv-virtualenv/etc/pyenv.d', 'SUDO_GID': '1001', 'NVM_INC': '/home/jules/.nvm/versions/node/v22.17.1/include/node', 'TERM_PROGRAM_VERSION': '3.4', 'TMUX': '/tmp/tmux-1001/default,1959,0', 'JAVA_HOME': '/usr/lib/jvm/java-21-openjdk-amd64', 'SUDO_COMMAND': '/usr/bin/bash -c echo "${BASHPID}"\ntmux new-session -d -s default -c /app && tmux set-option remain-on-exit on', 'SUDO_USER': 'jules', 'PYENV_VERSION': '3.12.11', 'PWD': '/app', 'LOGNAME': 'jules', 'HOME': '/home/jules', 'LANG': 'C.UTF-8', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'PYENV_DIR': '/app', 'NVM_DIR': '/home/jules/.nvm', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'TERM': 'tmux-256color', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'USER': 'jules', 'TMUX_PANE': '%0', 'SHLVL': '2', 'NVM_CD_FLAGS': '', 'PYENV_ROOT': '/home/jules/.pyenv', 'DEBUGINFOD_URLS': 'https://debuginfod.ubuntu.com ', 'BUN_INSTALL': '/usr/local/bun', 'PATH': '/home/jules/.pyenv/versions/3.12.11/bin:/home/jules/.pyenv/libexec:/home/jules/.pyenv/plugins/python-build/bin:/home/jules/.pyenv/plugins/pyenv-virtualenv/bin:/home/jules/.pyenv/plugins/pyenv-update/bin:/home/jules/.pyenv/plugins/pyenv-doctor/bin:/home/jules/.nvm/versions/node/v22.17.1/bin:/home/jules/.pyenv/shims:/home/jules/.pyenv/bin:/home/jules/.local/bin:/go/bin:/usr/local/go/bin:/usr/share/gradle/bin:/usr/share/maven/bin:/home/jules/.local/bin:/home/jules/.cargo/bin:/usr/local/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin', 'SUDO_UID': '1001', 'MAIL': '/var/mail/jules', 'NVM_BIN': '/home/jules/.nvm/versions/node/v22.17.1/bin', 'TERM_PROGRAM': 'tmux'})
+2025-08-25 09:14:31,962 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:31,972 - Main - DEBUG - Set points for user 2 in group 101 to 150
+2025-08-25 09:14:31,972 - Main - DEBUG - Added 100 points for user 2 in group 101 (new total: 150)
+2025-08-25 09:14:31,975 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:31,975 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:31,985 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:31,986 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:31,991 - Main - DEBUG - Set points for user 1 in group 101 to 240
+2025-08-25 09:14:31,991 - Main - DEBUG - Added 120 points for user 1 in group 101 (new total: 240)
+2025-08-25 09:14:31,993 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:31,993 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:31,999 - Main - DEBUG - Set points for user 1 in group 101 to 150
+2025-08-25 09:14:31,999 - Main - DEBUG - Added 50 points for user 1 in group 101 (new total: 150)
+2025-08-25 09:14:32,001 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,001 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,009 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,009 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,014 - Main - INFO - Command 'reward' is disabled in group 101. Aborting.
+2025-08-25 09:14:32,016 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,016 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,023 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,023 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,032 - Main - DEBUG - In stake_submission_points
+2025-08-25 09:14:32,034 - Main - DEBUG - Tracking message 456 in chat 101 for game test-game-123
+2025-08-25 09:14:32,040 - Main - DEBUG - Tracking message 456 in chat 101 for game test-game-123
+2025-08-25 09:14:32,043 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,043 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,049 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,049 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,051 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:14:32,054 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:14:32,056 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,056 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,057 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:14:32,062 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:14:32,063 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,063 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,067 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:14:32,067 - Main - DEBUG - Added -20 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:14:32,068 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:14:32,070 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,071 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,096 - Main - DEBUG - Tracking message 999 in chat 101 for game 8e298143-6c51-4264-8197-a5a05d7490d1
+2025-08-25 09:14:32,098 - Main - DEBUG - Tracking message 999 in chat 1 for game 8e298143-6c51-4264-8197-a5a05d7490d1
+2025-08-25 09:14:32,100 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,100 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,107 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,107 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,112 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:14:32,112 - Main - DEBUG - Added -60 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:14:32,113 - Main - DEBUG - Added triggered punishment 'You are grounded.' for user 1 in group 101
+2025-08-25 09:14:32,114 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:14:32,115 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,116 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,123 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,123 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,131 - Main - DEBUG - Set points for user 1 in group 101 to 50
+2025-08-25 09:14:32,131 - Main - DEBUG - Added -50 points for user 1 in group 101 (new total: 50)
+2025-08-25 09:14:32,134 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,134 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,141 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,141 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,148 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,149 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,155 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,155 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,164 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:14:32,165 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:14:32,167 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:14:32,170 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:14:32,170 - Main - DEBUG - is_owner(1) -> True
+2025-08-25 09:14:32,171 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:14:32,171 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'1': ['101'], '11': ['101'], '10': ['101']}}
+2025-08-25 09:14:32,172 - Main - DEBUG - Cached profile for user 11 (@admin_two)
+2025-08-25 09:14:32,172 - Main - DEBUG - Cached profile for user 10 (@admin_one)
+2025-08-25 09:14:32,173 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'1': ['101'], '11': ['101'], '10': ['101']}}
+2025-08-25 09:14:32,175 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,252 - Main - DEBUG - Environment variables: environ({'SHELL': '/bin/bash', 'PYENV_HOOK_PATH': '/home/jules/.pyenv/pyenv.d:/usr/etc/pyenv.d:/usr/local/etc/pyenv.d:/etc/pyenv.d:/usr/lib/pyenv/hooks:/home/jules/.pyenv/plugins/pyenv-virtualenv/etc/pyenv.d', 'SUDO_GID': '1001', 'NVM_INC': '/home/jules/.nvm/versions/node/v22.17.1/include/node', 'TERM_PROGRAM_VERSION': '3.4', 'TMUX': '/tmp/tmux-1001/default,1959,0', 'JAVA_HOME': '/usr/lib/jvm/java-21-openjdk-amd64', 'SUDO_COMMAND': '/usr/bin/bash -c echo "${BASHPID}"\ntmux new-session -d -s default -c /app && tmux set-option remain-on-exit on', 'SUDO_USER': 'jules', 'PYENV_VERSION': '3.12.11', 'PWD': '/app', 'LOGNAME': 'jules', 'HOME': '/home/jules', 'LANG': 'C.UTF-8', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'PYENV_DIR': '/app', 'NVM_DIR': '/home/jules/.nvm', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'TERM': 'tmux-256color', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'USER': 'jules', 'TMUX_PANE': '%0', 'SHLVL': '2', 'NVM_CD_FLAGS': '', 'PYENV_ROOT': '/home/jules/.pyenv', 'DEBUGINFOD_URLS': 'https://debuginfod.ubuntu.com ', 'BUN_INSTALL': '/usr/local/bun', 'PATH': '/home/jules/.pyenv/versions/3.12.11/bin:/home/jules/.pyenv/libexec:/home/jules/.pyenv/plugins/python-build/bin:/home/jules/.pyenv/plugins/pyenv-virtualenv/bin:/home/jules/.pyenv/plugins/pyenv-update/bin:/home/jules/.pyenv/plugins/pyenv-doctor/bin:/home/jules/.nvm/versions/node/v22.17.1/bin:/home/jules/.pyenv/shims:/home/jules/.pyenv/bin:/home/jules/.local/bin:/go/bin:/usr/local/go/bin:/usr/share/gradle/bin:/usr/share/maven/bin:/home/jules/.local/bin:/home/jules/.cargo/bin:/usr/local/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin', 'SUDO_UID': '1001', 'MAIL': '/var/mail/jules', 'NVM_BIN': '/home/jules/.nvm/versions/node/v22.17.1/bin', 'TERM_PROGRAM': 'tmux'})
+2025-08-25 09:17:15,253 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,264 - Main - DEBUG - Set points for user 2 in group 101 to 150
+2025-08-25 09:17:15,264 - Main - DEBUG - Added 100 points for user 2 in group 101 (new total: 150)
+2025-08-25 09:17:15,267 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,267 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,278 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,278 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,283 - Main - DEBUG - Set points for user 1 in group 101 to 240
+2025-08-25 09:17:15,284 - Main - DEBUG - Added 120 points for user 1 in group 101 (new total: 240)
+2025-08-25 09:17:15,286 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,286 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,291 - Main - DEBUG - Set points for user 1 in group 101 to 150
+2025-08-25 09:17:15,291 - Main - DEBUG - Added 50 points for user 1 in group 101 (new total: 150)
+2025-08-25 09:17:15,294 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,294 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,302 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,302 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,306 - Main - INFO - Command 'reward' is disabled in group 101. Aborting.
+2025-08-25 09:17:15,308 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,308 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,315 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,315 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,324 - Main - DEBUG - In stake_submission_points
+2025-08-25 09:17:15,326 - Main - DEBUG - Tracking message 456 in chat 1 for game test-game-123
+2025-08-25 09:17:15,330 - Main - DEBUG - Tracking message 456 in chat 101 for game test-game-123
+2025-08-25 09:17:15,333 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,333 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,340 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,341 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,342 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:17:15,345 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:17:15,347 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,347 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,348 - Main - DEBUG - Saved admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:17:15,352 - Main - DEBUG - Loaded admin data: {'owner': '999', 'admins': {}}
+2025-08-25 09:17:15,354 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,354 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,358 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:17:15,358 - Main - DEBUG - Added -20 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:17:15,359 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:17:15,361 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,361 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,369 - Main - DEBUG - Tracking message 999 in chat 101 for game 2d64448d-8e28-4263-9e58-e701c8669204
+2025-08-25 09:17:15,370 - Main - DEBUG - Tracking message 999 in chat 1 for game 2d64448d-8e28-4263-9e58-e701c8669204
+2025-08-25 09:17:15,387 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,388 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,394 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,394 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,399 - Main - DEBUG - Set points for user 1 in group 101 to -10
+2025-08-25 09:17:15,399 - Main - DEBUG - Added -60 points for user 1 in group 101 (new total: -10)
+2025-08-25 09:17:15,400 - Main - DEBUG - Added triggered punishment 'You are grounded.' for user 1 in group 101
+2025-08-25 09:17:15,401 - Main - DEBUG - Set points for user 1 in group 101 to 0
+2025-08-25 09:17:15,403 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,403 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,411 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,411 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,419 - Main - DEBUG - Set points for user 1 in group 101 to 50
+2025-08-25 09:17:15,419 - Main - DEBUG - Added -50 points for user 1 in group 101 (new total: 50)
+2025-08-25 09:17:15,421 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,421 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,429 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,429 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,436 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,436 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,443 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,443 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,452 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+2025-08-25 09:17:15,452 - asyncio - DEBUG - Using selector: EpollSelector
+2025-08-25 09:17:15,455 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:17:15,458 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:17:15,458 - Main - DEBUG - is_owner(1) -> True
+2025-08-25 09:17:15,459 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'9': ['101']}}
+2025-08-25 09:17:15,459 - Main - DEBUG - Saved admin data: {'owner': '1', 'admins': {'11': ['101'], '10': ['101'], '1': ['101']}}
+2025-08-25 09:17:15,460 - Main - DEBUG - Cached profile for user 11 (@admin_two)
+2025-08-25 09:17:15,460 - Main - DEBUG - Cached profile for user 10 (@admin_one)
+2025-08-25 09:17:15,462 - Main - DEBUG - Loaded admin data: {'owner': '1', 'admins': {'11': ['101'], '10': ['101'], '1': ['101']}}
+2025-08-25 09:17:15,463 - asyncio - DEBUG - Close <_UnixSelectorEventLoop running=False closed=False debug=True>
