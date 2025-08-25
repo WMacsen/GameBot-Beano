@@ -200,7 +200,7 @@ def is_admin(user_id):
 
 async def get_user_id_by_username(context, chat_id, username) -> str:
     """Get a user's Telegram ID by their username in a chat."""
-    async for member in context.bot.get_chat_administrators(chat_id):
+    async for member in await context.bot.get_chat_administrators(chat_id):
         if member.user.username and member.user.username.lower() == username.lower().lstrip('@'):
             logger.debug(f"Found user ID {member.user.id} for username {username}")
             return str(member.user.id)
