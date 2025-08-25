@@ -15,6 +15,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ChatMemberStatus
 from functools import wraps
 import time
+from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # =========================
 # Logging Configuration
@@ -40,11 +41,13 @@ logger.debug(f"Environment variables: {os.environ}")
 
 # Load the Telegram bot token from environment variable
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
-BOT_USERNAME: Final = '@MasterBeanoBot'  # Bot's username (update if needed)
+# IMPORTANT: UPDATE THESE VALUES FOR YOUR BOT
+BOT_USERNAME: Final = '@YourBotUsername'  # <--- CHANGE THIS to your bot's username
+OWNER_ID = 123456789  # <--- CHANGE THIS to your own Telegram User ID
+# END IMPORTANT
 
 # File paths for persistent data storage
 ADMIN_DATA_FILE = 'admins.json'          # Stores admin/owner info
-OWNER_ID = 7237569475  # Your Telegram ID (change to your actual Telegram user ID)
 
 
 # =========================
@@ -59,6 +62,7 @@ def command_handler_wrapper(admin_only=False):
                 return
 
             user = update.effective_user
+            cache_user_profile(user) # Cache the user who triggered the command
             chat = update.effective_chat
             message_id = update.message.message_id
 
@@ -102,71 +106,216 @@ def command_handler_wrapper(admin_only=False):
 # =============================
 # Admin/Owner Data Management
 # =============================
-ADMIN_NICKNAMES_FILE = 'admin_nicknames.json'
+USER_TITLES_FILE = 'user_titles.json'
 
-def load_admin_nicknames():
-    if os.path.exists(ADMIN_NICKNAMES_FILE):
-        with open(ADMIN_NICKNAMES_FILE, 'r', encoding='utf-8') as f:
+def load_user_titles():
+    if os.path.exists(USER_TITLES_FILE):
+        with open(USER_TITLES_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
 
-def save_admin_nicknames(data):
-    with open(ADMIN_NICKNAMES_FILE, 'w', encoding='utf-8') as f:
+def save_user_titles(data):
+    with open(USER_TITLES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 @command_handler_wrapper(admin_only=True)
-async def setnickname_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id):
-        await update.message.reply_text("Only the owner can use this command.")
+async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /title <user> <title> - Sets a title for a user. Can be used as a reply. """
+    target_user = None
+    title = ""
+
+    # Case 1: Command is a reply to a message
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+        if not context.args:
+            await update.message.reply_text("Usage (as reply): /title <the title>")
+            return
+        title = " ".join(context.args)
+
+    # Case 2: Command is not a reply, used with arguments
+    else:
+        if len(context.args) < 2:
+            await update.message.reply_text("Usage: /title <@username or user_id> <title>\nOr, reply to a user's message with: /title <the title>")
+            return
+
+        target_identifier = context.args[0]
+        title = " ".join(context.args[1:])
+
+        target_id = None
+        if target_identifier.isdigit():
+            target_id = int(target_identifier)
+        else:
+            target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
+
+        if not target_id:
+            await update.message.reply_text(f"Could not find user {target_identifier}.")
+            return
+
+        # We have an ID, but we need the user object for the display name later
+        try:
+            target_user = (await context.bot.get_chat_member(update.effective_chat.id, target_id)).user
+        except Exception:
+            await update.message.reply_text(f"Could not retrieve user information for ID {target_id}.")
+            return
+
+    if not target_user:
+        await update.message.reply_text("Could not determine target user.")
         return
 
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /setnickname <@username or user_id> <nickname>")
+    # Create the mention string BEFORE setting the title, so it uses the original name.
+    original_user_mention = f'<a href="tg://user?id={target_user.id}">{html.escape(target_user.full_name)}</a>'
+
+    titles = load_user_titles()
+    titles[str(target_user.id)] = title
+    save_user_titles(titles)
+
+    # Now, use the original mention in the confirmation message.
+    await update.message.reply_text(f"Title for {original_user_mention} has been set to '{html.escape(title)}'.", parse_mode='HTML')
+
+@command_handler_wrapper(admin_only=True)
+async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /removetitle <user> - Removes a title from a user. Can be used as a reply. """
+    target_user = None
+
+    # Case 1: Command is a reply to a message
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+        if context.args:
+            await update.message.reply_text("Usage (as reply): /removetitle (no arguments needed).")
+            return
+
+    # Case 2: Command is not a reply, used with an argument
+    else:
+        if len(context.args) != 1:
+            await update.message.reply_text("Usage: /removetitle <@username or user_id>\nOr, reply to a user's message with just: /removetitle")
+            return
+
+        target_identifier = context.args[0]
+        target_id = None
+        if target_identifier.isdigit():
+            target_id = int(target_identifier)
+        else:
+            target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
+
+        if not target_id:
+            await update.message.reply_text(f"Could not find user {target_identifier}.")
+            return
+
+        try:
+            target_user = (await context.bot.get_chat_member(update.effective_chat.id, target_id)).user
+        except Exception:
+            await update.message.reply_text(f"Could not retrieve user information for ID {target_id}.")
+            return
+
+    if not target_user:
+        await update.message.reply_text("Could not determine target user.")
+        return
+
+    titles = load_user_titles()
+    target_id_str = str(target_user.id)
+    display_name = get_display_name(target_user.id, target_user.full_name) # Get name before potentially removing title
+
+    if target_id_str in titles:
+        del titles[target_id_str]
+        save_user_titles(titles)
+        # Use the name *without* the title for the confirmation message.
+        await update.message.reply_text(f"Title for {html.escape(target_user.full_name)} has been removed.", parse_mode='HTML')
+    else:
+        await update.message.reply_text(f"User {display_name} does not have a title.", parse_mode='HTML')
+
+@command_handler_wrapper(admin_only=True)
+async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /viewstakes <user> - View all media staked by a user. """
+    if not context.args:
+        await update.message.reply_text("Usage: /viewstakes <@username or user_id>")
+        return
+
+    if update.effective_chat.type != "private":
+        await update.message.reply_text("This command can only be used in a private chat for privacy reasons.")
         return
 
     target_identifier = context.args[0]
-    nickname = " ".join(context.args[1:])
-
     target_id = None
+
     if target_identifier.isdigit():
         target_id = int(target_identifier)
+    elif target_identifier.startswith('@'):
+        username_to_find = target_identifier[1:].lower()
+        profiles = load_user_profiles()
+        found = False
+        for uid, uname in profiles.items():
+            if uname.lower() == username_to_find:
+                target_id = int(uid)
+                found = True
+                break
+        if not found:
+            await update.message.reply_text(f"Could not find user {target_identifier} in my cache. Please use their user ID instead, or ensure I have seen them in a group recently.")
+            return
     else:
-        target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
-
-    if not target_id:
-        await update.message.reply_text(f"Could not find user {target_identifier}.")
+        await update.message.reply_text("Please provide a valid user ID or a @username starting with '@'.")
         return
 
-    if not is_admin(target_id):
-        await update.message.reply_text("You can only set nicknames for admins.")
+    stakes = load_media_stakes()
+    user_stakes = stakes.get(str(target_id))
+
+    if not user_stakes:
+        await update.message.reply_text(f"No media stakes found for user {target_id}.")
         return
 
-    nicknames = load_admin_nicknames()
-    nicknames[str(target_id)] = nickname
-    save_admin_nicknames(nicknames)
+    await update.message.reply_text(f"Found {len(user_stakes)} media stake(s) for user {target_id}. Sending them now...")
 
-    await update.message.reply_text(f"Nickname for user {target_id} has been set to '{nickname}'.")
+    for stake in user_stakes:
+        opponent_text = f"against user {stake['opponent_id']}" if stake.get('opponent_id') else ""
+        group_text = f"in group {stake['group_id']}" if stake.get('group_id') else ""
+        time_text = datetime.fromtimestamp(stake['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+
+        caption = f"Stake from {time_text} {opponent_text} {group_text}".strip()
+
+        try:
+            if stake['media_type'] == 'photo':
+                await context.bot.send_photo(update.effective_chat.id, stake['file_id'], caption=caption)
+            elif stake['media_type'] == 'video':
+                await context.bot.send_video(update.effective_chat.id, stake['file_id'], caption=caption)
+            elif stake['media_type'] == 'voice':
+                await context.bot.send_voice(update.effective_chat.id, stake['file_id'], caption=caption)
+        except Exception as e:
+            await update.message.reply_text(f"Could not send a stake (file_id: {stake['file_id']}). It might have expired. Error: {e}")
+            logger.error(f"Failed to send stake for user {target_id}: {e}")
 
 def load_admin_data():
-    """Load admin and owner data from file. Ensures owner is always in admin list."""
-    if os.path.exists(ADMIN_DATA_FILE):
-        with open(ADMIN_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            # Always ensure owner is in admin list
-            if str(OWNER_ID) not in data.get('admins', []):
-                data['admins'] = list(set(data.get('admins', []) + [str(OWNER_ID)]))
-            data['owner'] = str(OWNER_ID)
-            logger.debug(f"Loaded admin data: {data}")
-            return data
-    # Default: owner is admin
-    logger.debug("No admin data file found, using default owner as admin.")
-    return {'owner': str(OWNER_ID), 'admins': [str(OWNER_ID)]}
+    """Loads admin data, migrating from old list format to new dict format if necessary."""
+    if not os.path.exists(ADMIN_DATA_FILE):
+        return {'owner': str(OWNER_ID), 'admins': {}}
+
+    with open(ADMIN_DATA_FILE, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # --- Migration from old format ---
+    if isinstance(data.get('admins'), list):
+        logger.warning("Old admin file format detected. Migrating to new format.")
+        old_admins = data['admins']
+        data['admins'] = {}
+        if str(OWNER_ID) in old_admins:
+             old_admins.remove(str(OWNER_ID))
+        if old_admins:
+             # We don't know which group these admins came from, so we assign them to a legacy group.
+             # The next /update in their actual group will fix this.
+             for admin_id in old_admins:
+                 data['admins'][str(admin_id)] = ["legacy_group"]
+        save_admin_data(data)
+        logger.info("Admin file migrated successfully.")
+    # --- End Migration ---
+
+    if 'owner' not in data:
+        data['owner'] = str(OWNER_ID)
+    if 'admins' not in data:
+        data['admins'] = {}
+
+    logger.debug(f"Loaded admin data: {data}")
+    return data
 
 def save_admin_data(data):
-    """Save admin and owner data to file. Ensures owner is always in admin list."""
-    # Always ensure owner is in admin list
-    if str(data['owner']) not in data['admins']:
-        data['admins'].append(str(data['owner']))
+    """Saves admin and owner data to file."""
     with open(ADMIN_DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     logger.debug(f"Saved admin data: {data}")
@@ -174,37 +323,129 @@ def save_admin_data(data):
 def is_owner(user_id):
     """Check if the user is the owner."""
     data = load_admin_data()
-    result = str(user_id) == str(data['owner'])
+    result = str(user_id) == str(data.get('owner'))
     logger.debug(f"is_owner({user_id}) -> {result}")
     return result
 
 def get_display_name(user_id: int, full_name: str) -> str:
     """
     Determines the display name for a user, returning a taggable HTML mention.
-    If the user is an admin with a nickname, the nickname is used as the link text.
+    If the user has a title, the title is used as the link text.
     Otherwise, the user's full name is used.
     """
-    nicknames = load_admin_nicknames()
-    display_text = full_name
-    if is_admin(user_id):
-        display_text = nicknames.get(str(user_id), full_name)
+    titles = load_user_titles()
+    display_text = titles.get(str(user_id), full_name)
 
     return f'<a href="tg://user?id={user_id}">{html.escape(display_text)}</a>'
 
 def is_admin(user_id):
     """Check if the user is an admin or the owner."""
-    data = load_admin_data()
-    result = str(user_id) in data['admins'] or str(user_id) == str(data['owner'])
-    logger.debug(f"is_admin({user_id}) -> {result}")
-    return result
+    admin_data = load_admin_data()
+    user_id_str = str(user_id)
+
+    if user_id_str == admin_data.get('owner'):
+        return True
+
+    # Check if the user is a key in the admins dictionary and has at least one group.
+    if user_id_str in admin_data.get('admins', {}) and admin_data['admins'][user_id_str]:
+        return True
+
+    return False
+
+@command_handler_wrapper(admin_only=True)
+async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /update - (Owner only) Syncs the admin list for the current group. """
+    if not is_owner(update.effective_user.id):
+        await update.message.reply_text("This command is for the bot owner only.")
+        return
+
+    if update.effective_chat.type not in ['group', 'supergroup']:
+        await update.message.reply_text("This command can only be used in a group.")
+        return
+
+    chat_id_str = str(update.effective_chat.id)
+
+    try:
+        # 1. Get current admins from Telegram
+        tg_admins = await context.bot.get_chat_administrators(chat_id_str)
+        tg_admin_ids = {str(admin.user.id) for admin in tg_admins}
+
+        # 2. Load our stored data
+        admin_data = load_admin_data()
+        stored_admins = admin_data.get('admins', {})
+
+        # 3. Find admins for this specific group in our records
+        stored_group_admin_ids = {
+            uid for uid, groups in stored_admins.items() if chat_id_str in groups
+        }
+
+        # 4. Determine who was added and who was removed
+        added_ids = tg_admin_ids - stored_group_admin_ids
+        removed_ids = stored_group_admin_ids - tg_admin_ids
+
+        # 5. Update the stored data
+        for admin_id in added_ids:
+            stored_admins.setdefault(admin_id, []).append(chat_id_str)
+
+        for admin_id in removed_ids:
+            if admin_id in stored_admins and chat_id_str in stored_admins[admin_id]:
+                stored_admins[admin_id].remove(chat_id_str)
+            # If the user is no longer an admin in any group, remove them entirely
+            if admin_id in stored_admins and not stored_admins[admin_id]:
+                del stored_admins[admin_id]
+
+        save_admin_data(admin_data)
+
+        # 6. Report changes
+        response_lines = []
+        if added_ids:
+            added_mentions = []
+            for admin_id in added_ids:
+                user = next((a.user for a in tg_admins if str(a.user.id) == admin_id), None)
+                if user:
+                    added_mentions.append(get_display_name(user.id, user.full_name))
+                    cache_user_profile(user)
+            if added_mentions:
+                response_lines.append("New admins added: " + ", ".join(added_mentions))
+
+        if removed_ids:
+            removed_names = []
+            profiles = load_user_profiles()
+            for admin_id in removed_ids:
+                # Try to get the name from the cache, fall back to ID if not found
+                name = profiles.get(admin_id, f"User ID {admin_id}")
+                removed_names.append(html.escape(name))
+            response_lines.append("Admins removed from this group: " + ", ".join(removed_names))
+
+        if not response_lines:
+            await update.message.reply_text("Admin list is already up to date for this group.")
+        else:
+            await update.message.reply_text("\n".join(response_lines))
+
+    except Exception as e:
+        logger.error(f"Failed to update admins: {e}", exc_info=True)
+        await update.message.reply_text(f"An error occurred while updating admins: {e}")
 
 async def get_user_id_by_username(context, chat_id, username) -> str:
-    """Get a user's Telegram ID by their username in a chat."""
-    for member in await context.bot.get_chat_administrators(chat_id):
-        if member.user.username and member.user.username.lower() == username.lower().lstrip('@'):
-            logger.debug(f"Found user ID {member.user.id} for username {username}")
-            return str(member.user.id)
-    logger.debug(f"Username {username} not found in chat {chat_id}")
+    """Get a user's Telegram ID by their username, using the profile cache."""
+    username_to_find = username.lower().lstrip('@')
+    profiles = load_user_profiles()
+    for uid, uname in profiles.items():
+        if uname and uname.lower() == username_to_find:
+            logger.debug(f"Found user ID {uid} for username {username} in cache.")
+            return str(uid)
+
+    # As a last resort, check admins if the user is not in the cache
+    try:
+        for member in await context.bot.get_chat_administrators(chat_id):
+            if member.user.username and member.user.username.lower() == username_to_find:
+                logger.debug(f"Found admin user ID {member.user.id} for username {username}")
+                cache_user_profile(member.user) # Cache them for next time
+                return str(member.user.id)
+    except Exception as e:
+        logger.error(f"Could not search chat admins for {username} in chat {chat_id}: {e}")
+
+    logger.debug(f"Username {username} not found in cache or admin list for chat {chat_id}")
     return None
 
 # =============================
@@ -721,6 +962,164 @@ async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAUL
     )
 
 
+def create_tictactoe_board_markup(board: list, game_id: str):
+    """Creates the text and markup for a Tic-Tac-Toe board."""
+    emojis = {0: '➖', 1: '❌', 2: '⭕️'}
+    keyboard = []
+    for r in range(3):
+        row = []
+        for c in range(3):
+            # If cell is empty, it's a button. Otherwise, just text.
+            if board[r][c] == 0:
+                row.append(InlineKeyboardButton('➖', callback_data=f'ttt:move:{game_id}:{r}:{c}'))
+            else:
+                row.append(InlineKeyboardButton(emojis[board[r][c]], callback_data='ttt:noop'))
+        keyboard.append(row)
+    return InlineKeyboardMarkup(keyboard)
+
+def check_tictactoe_win(board: list, player_num: int) -> bool:
+    """Check for a win in Tic-Tac-Toe."""
+    # Check rows, columns, and diagonals
+    for i in range(3):
+        if all(board[i][j] == player_num for j in range(3)): return True
+        if all(board[j][i] == player_num for j in range(3)): return True
+    if all(board[i][i] == player_num for i in range(3)): return True
+    if all(board[i][2-i] == player_num for i in range(3)): return True
+    return False
+
+def check_tictactoe_draw(board: list) -> bool:
+    """Check for a draw in Tic-Tac-Toe."""
+    return all(cell != 0 for row in board for cell in row)
+
+async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
+    """Handles a draw, where both players lose their stakes."""
+    games_data = await load_games_data_async()
+    game = games_data[game_id]
+
+    challenger_id = game['challenger_id']
+    opponent_id = game['opponent_id']
+    challenger_stake = game.get('challenger_stake')
+    opponent_stake = game.get('opponent_stake')
+
+    challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
+    opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+
+    await context.bot.send_message(
+        game['group_id'],
+        f"The game between {challenger_name} and {opponent_name} ended in a draw! Both players lose their stakes."
+    )
+
+    # Handle challenger's stake
+    if challenger_stake:
+        if challenger_stake['type'] == 'points':
+            await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
+        else: # media
+            caption = f"This was {challenger_name}'s stake from the drawn game."
+            if challenger_stake['type'] == 'photo':
+                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption)
+            elif challenger_stake['type'] == 'video':
+                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption)
+            elif challenger_stake['type'] == 'voice':
+                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption)
+
+    # Handle opponent's stake
+    if opponent_stake:
+        if opponent_stake['type'] == 'points':
+            await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
+        else: # media
+            caption = f"This was {opponent_name}'s stake from the drawn game."
+            if opponent_stake['type'] == 'photo':
+                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption)
+            elif opponent_stake['type'] == 'video':
+                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption)
+            elif opponent_stake['type'] == 'voice':
+                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption)
+
+    game['status'] = 'complete'
+    await save_games_data_async(games_data)
+    await delete_tracked_messages(context, game_id)
+
+
+async def tictactoe_move_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles a move in a Tic-Tac-Toe game."""
+    query = update.callback_query
+
+    if query.data == 'ttt:noop':
+        await query.answer("This spot is already taken.", show_alert=True)
+        return
+
+    await query.answer()
+
+    _, _, game_id, r_str, c_str = query.data.split(':')
+    r, c = int(r_str), int(c_str)
+    user_id = query.from_user.id
+
+    await update_game_activity(game_id)
+
+    games_data = await load_games_data_async()
+    game = games_data.get(game_id)
+
+    if not game or game.get('status') != 'active':
+        await query.edit_message_text("This game is no longer active.")
+        return
+
+    if game.get('turn') != user_id:
+        await query.answer("It's not your turn!", show_alert=True)
+        return
+
+    board = game['board']
+    player_num = 1 if user_id == game['challenger_id'] else 2
+
+    if board[r][c] != 0:
+        await query.answer("This spot is already taken!", show_alert=True)
+        return
+
+    board[r][c] = player_num
+    game['board'] = board
+
+    if check_tictactoe_win(board, player_num):
+        winner_id = user_id
+        loser_id = game['opponent_id'] if user_id == game['challenger_id'] else game['challenger_id']
+        winner_member = await context.bot.get_chat_member(game['group_id'], winner_id)
+        winner_name = get_display_name(winner_id, winner_member.user.full_name)
+
+        reply_markup = create_tictactoe_board_markup(board, game_id)
+        await query.edit_message_text(
+            f"<b>Tic-Tac-Toe - Game Over!</b>\n\n{winner_name} wins!",
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+        await handle_game_over(context, game_id, winner_id, loser_id)
+        return
+
+    if check_tictactoe_draw(board):
+        reply_markup = create_tictactoe_board_markup(board, game_id)
+        await query.edit_message_text(
+            "<b>Tic-Tac-Toe - Draw!</b>\n\nBoth players lose their stake.",
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+        await handle_game_draw(context, game_id)
+        return
+
+    # Switch turns
+    game['turn'] = game['opponent_id'] if user_id == game['challenger_id'] else game['challenger_id']
+    await save_games_data_async(games_data)
+
+    turn_player_id = game['turn']
+    turn_player_member = await context.bot.get_chat_member(game['group_id'], turn_player_id)
+    turn_player_name = get_display_name(turn_player_id, turn_player_member.user.full_name)
+    reply_markup = create_tictactoe_board_markup(board, game_id)
+
+    await query.edit_message_text(
+        f"<b>Tic-Tac-Toe</b>\n\nIt's {turn_player_name}'s turn.",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+
 # =============================
 # Game Logic Helpers
 # =============================
@@ -1183,6 +1582,40 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
 # =============================
 PUNISHMENTS_DATA_FILE = 'punishments.json'
 PUNISHMENT_STATUS_FILE = 'punishment_status.json'
+MEDIA_STAKES_FILE = 'media_stakes.json'
+USER_PROFILES_FILE = 'user_profiles.json'
+
+def load_user_profiles():
+    if os.path.exists(USER_PROFILES_FILE):
+        with open(USER_PROFILES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_user_profiles(data):
+    with open(USER_PROFILES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def cache_user_profile(user: User):
+    """Caches a user's ID and username."""
+    if not user or not user.id or not user.username:
+        return
+
+    profiles = load_user_profiles()
+    # Only update if the username has changed or the user is new
+    if str(user.id) not in profiles or profiles[str(user.id)] != user.username:
+        profiles[str(user.id)] = user.username
+        save_user_profiles(profiles)
+        logger.debug(f"Cached profile for user {user.id} (@{user.username})")
+
+def load_media_stakes():
+    if os.path.exists(MEDIA_STAKES_FILE):
+        with open(MEDIA_STAKES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_media_stakes(data):
+    with open(MEDIA_STAKES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def load_punishments_data():
     if os.path.exists(PUNISHMENTS_DATA_FILE):
@@ -1563,6 +1996,8 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     challenger_user = update.effective_user
     opponent_user = update.message.reply_to_message.from_user
+    cache_user_profile(challenger_user)
+    cache_user_profile(opponent_user)
 
     if challenger_user.id == opponent_user.id:
         await update.message.reply_text("You cannot challenge yourself.")
@@ -1915,13 +2350,16 @@ async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================
 COMMAND_MAP = {
     'start': {'is_admin': False}, 'help': {'is_admin': False},
-    'command': {'is_admin': False}, 'remove': {'is_admin': True}, 'addreward': {'is_admin': True},
+    'command': {'is_admin': False}, 'disable': {'is_admin': True}, 'enable': {'is_admin': True}, 'addreward': {'is_admin': True},
     'removereward': {'is_admin': True}, 'addpunishment': {'is_admin': True},
     'removepunishment': {'is_admin': True}, 'punishment': {'is_admin': True},
     'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True},
     'chance': {'is_admin': False}, 'reward': {'is_admin': False}, 'cancel': {'is_admin': False},
     'addpoints': {'is_admin': True}, 'removepoints': {'is_admin': True},
-    'point': {'is_admin': False}, 'top5': {'is_admin': True}, 'setnickname': {'is_admin': True},
+    'point': {'is_admin': False}, 'top5': {'is_admin': True},
+    'title': {'is_admin': True}, 'removetitle': {'is_admin': True},
+    'update': {'is_admin': True}, 'viewstakes': {'is_admin': True},
+    'game': {'is_admin': False},
 }
 
 @command_handler_wrapper(admin_only=False)
@@ -1967,6 +2405,32 @@ async def command_list_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await update.message.reply_text(msg, parse_mode='HTML')
 
+
+@command_handler_wrapper(admin_only=False)
+async def game_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /game: Lists available games and their rules.
+    """
+    game_list_text = """
+<b>Available Games</b>
+
+🎲 <b>Chance Game</b>
+- Command: `/chance`
+- Rules: Play a game of chance for a random outcome. You can play up to 3 times per day.
+
+🏆 <b>Challenge Games</b>
+- Command: `/newgame` (reply to a user to challenge them)
+- Rules: After challenging, the bot will guide you through setting up the game type and stake in a private message.
+
+You can choose from the following challenge games:
+- <b>Dice</b>: A simple best-of-3, 5, or 9 dice rolling game.
+- <b>Connect Four</b>: Try to get four of your pieces in a row, column, or diagonal.
+- <b>Battleship</b>: The classic naval combat game. Place your ships and try to sink your opponent's fleet.
+- <b>Tic-Tac-Toe</b>: The classic 3x3 grid game. A draw results in both players losing their stake.
+    """
+    await update.message.reply_text(game_list_text, parse_mode='HTML', disable_web_page_preview=True)
+
+
 # Persistent storage for disabled commands per group
 DISABLED_COMMANDS_FILE = 'disabled_commands.json'
 
@@ -1980,51 +2444,102 @@ def save_disabled_commands(data):
     with open(DISABLED_COMMANDS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# /remove - Remove a dynamic hashtag command or disable a static command (admin only)
+# /disable - Disable a static command (admin only)
 @command_handler_wrapper(admin_only=True)
-async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def disable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
         await update.message.reply_text("This command can only be used in group chats.")
         return
-    if not update.message or not context.args:
-        await update.message.reply_text("Usage: /remove <command>")
+    if not context.args:
+        await update.message.reply_text("Usage: /disable <command>")
         return
-    tag = context.args[0].lstrip('#/').lower()
-    # Static command disabling
-    if tag in COMMAND_MAP:
-        group_id = str(update.effective_chat.id)
-        disabled = load_disabled_commands()
-        disabled.setdefault(group_id, set())
-        # Convert to list for JSON
-        disabled[group_id] = list(set(disabled.get(group_id, [])) | {tag})
-        save_disabled_commands(disabled)
-        await update.message.reply_text(f"Command /{tag} has been disabled in this group. Admins can re-enable it with /enable {tag}.")
-        return
-    await update.message.reply_text(f"No such command: /{tag}")
 
+    cmd_to_disable = context.args[0].lstrip('/').lower()
+
+    if cmd_to_disable not in COMMAND_MAP:
+        await update.message.reply_text(f"No such command: /{cmd_to_disable}")
+        return
+
+    if cmd_to_disable in ['disable', 'enable']:
+        await update.message.reply_text(f"You cannot disable this command.")
+        return
+
+    group_id = str(update.effective_chat.id)
+    disabled_data = load_disabled_commands()
+
+    # Use a set for efficient add/check operations
+    disabled_in_group = set(disabled_data.get(group_id, []))
+    disabled_in_group.add(cmd_to_disable)
+    disabled_data[group_id] = list(disabled_in_group) # Convert back to list for JSON
+
+    save_disabled_commands(disabled_data)
+    await update.message.reply_text(f"Command /{cmd_to_disable} has been disabled in this group. Admins can re-enable it with /enable {cmd_to_disable}.")
+
+# /enable - Enable a static command (admin only)
+@command_handler_wrapper(admin_only=True)
+async def enable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type == "private":
+        await update.message.reply_text("This command can only be used in group chats.")
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /enable <command>")
+        return
+
+    cmd_to_enable = context.args[0].lstrip('/').lower()
+
+    if cmd_to_enable not in COMMAND_MAP:
+        await update.message.reply_text(f"No such command: /{cmd_to_enable}")
+        return
+
+    group_id = str(update.effective_chat.id)
+    disabled_data = load_disabled_commands()
+
+    if group_id not in disabled_data:
+        await update.message.reply_text(f"Command /{cmd_to_enable} is not disabled.")
+        return
+
+    # Use a set for efficient operations
+    disabled_in_group = set(disabled_data.get(group_id, []))
+
+    if cmd_to_enable in disabled_in_group:
+        disabled_in_group.remove(cmd_to_enable)
+        disabled_data[group_id] = list(disabled_in_group)
+        save_disabled_commands(disabled_data)
+        await update.message.reply_text(f"Command /{cmd_to_enable} has been enabled.")
+    else:
+        await update.message.reply_text(f"Command /{cmd_to_enable} is not disabled.")
 
 #Start command
 @command_handler_wrapper(admin_only=False)
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /start command with a detailed welcome message."""
     if context.args and context.args[0].startswith('setstake_'):
         return  # This is handled by the game setup conversation handler
 
+    start_message = (
+        "Hello! I am GameBot. I'm here to help manage games, points, and rewards in your group.\n\n"
+        "Here are some commands to get you started:\n"
+        "- `/help`: Shows a detailed, interactive help menu.\n"
+        "- `/command`: Lists all available commands for the group you're in.\n\n"
+        "If you have any suggestions or want your own version of this bot, please contact the developer: @BeansOfBeano."
+    )
+
+    # In a group, just give a prompt to start a private chat.
     if update.effective_chat.type != "private":
         await update.message.reply_text("Please message me in private to use /start.")
         try:
+            # Also send the welcome message privately if possible
             await context.bot.send_message(
                 chat_id=update.effective_user.id,
-                text='Hey there! What can I help you with?'
+                text=start_message
             )
         except Exception:
+            # Silently fail if user has not started a chat with the bot
             pass
         return
-    # Check if disabled in this group (should never trigger in private)
-    group_id = str(update.effective_chat.id)
-    disabled = load_disabled_commands()
-    if 'start' in disabled.get(group_id, []):
-        return
-    await update.message.reply_text('Hey there! What can I help you with?')
+
+    # In a private chat, send the full welcome message.
+    await update.message.reply_text(start_message)
 
 #Help command
 @command_handler_wrapper(admin_only=False)
@@ -2036,12 +2551,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please use the /help command in a private chat with me for a better experience.")
         return
 
+    user_id = update.effective_user.id
     keyboard = [
         [InlineKeyboardButton("General Commands", callback_data='help_general')],
         [InlineKeyboardButton("Game Commands", callback_data='help_games')],
         [InlineKeyboardButton("Point System", callback_data='help_points')],
-        [InlineKeyboardButton("Admin Commands", callback_data='help_admin')],
     ]
+    if is_admin(user_id):
+        keyboard.append([InlineKeyboardButton("Admin Commands", callback_data='help_admin')])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
@@ -2055,6 +2573,7 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     topic = query.data
+    user_id = query.from_user.id
 
     text = ""
     keyboard = [[InlineKeyboardButton("« Back to Main Menu", callback_data='help_back')]]
@@ -2064,44 +2583,52 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 <b>General Commands</b>
 - /help: Shows this help menu.
 - /command: Lists all available commands in the current group.
+- /game: Shows a list of available games and their rules.
         """
     elif topic == 'help_games':
         text = """
 <b>Game Commands</b>
-- /newgame (reply to user): Challenge someone to a game (Dice, Connect Four, Battleship).
-- /loser (admin only): Declare a user as the loser of a game.
-- /cleangames (admin only): Clean up old game data.
+- /newgame (reply to user): Challenge someone to a game of Dice, Connect Four, Battleship, or Tic-Tac-Toe.
 - /chance: Play a daily game of chance for points or other outcomes.
         """
     elif topic == 'help_points':
         text = """
 <b>Point & Reward System</b>
 - /point: Check your own points.
-- /reward: View and buy available rewards.
-- /top5 (admin only): See the top 5 users with the most points.
-- /addpoints (admin only): Add points to a user.
-- /removepoints (admin only): Remove points from a user.
-- /addreward (admin only): Add a new reward.
-- /removereward (admin only): Remove a reward.
-- /punishment (admin only): List punishments for low points.
-- /addpunishment (admin only): Add a new punishment.
-- /removepunishment (admin only): Remove a punishment.
+- /reward: View and buy available rewards with your points.
         """
     elif topic == 'help_admin':
+        if not is_admin(user_id):
+            await query.answer("You are not authorized to view this section.", show_alert=True)
+            return
         text = """
 <b>Admin Commands</b>
-This bot has many admin commands for managing games, points, and users.
-Due to Telegram limitations, I cannot know if you are an admin in a private chat.
 
-To see the full list of admin commands available to you in a specific group, please go to that group and use the `/command` command.
+- /title &lt;user_id&gt; &lt;title&gt;: Sets a custom title for a user.
+- /removetitle &lt;user_id&gt;: Removes a title from a user.
+- /update: (Owner only, in group) Adds all admins from the current group to the bot's global admin list.
+- /removeadmin &lt;user_id&gt;: (Owner only) Removes a user from the bot's global admin list.
+- /viewstakes &lt;user_id or @username&gt;: (Private chat only) View all media staked by a user.
+- /loser &lt;user_id&gt;: Declare a user as the loser of the current game.
+- /cleangames: Cleans up old, completed game data.
+- /top5: See the top 5 users with the most points.
+- /addpoints &lt;user_id&gt; &lt;amount&gt;: Add points to a user.
+- /removepoints &lt;user_id&gt; &lt;amount&gt;: Remove points from a user.
+- /addreward &lt;name&gt; &lt;cost&gt;: Add a new reward to the group's shop.
+- /removereward &lt;name&gt;: Remove a reward from the shop.
+- /addpunishment &lt;threshold&gt; &lt;message&gt;: Add a punishment for falling below a point threshold.
+- /removepunishment &lt;message&gt;: Remove a punishment.
+- /punishment: List all configured punishments for the group.
         """
     elif topic == 'help_back':
         main_menu_keyboard = [
             [InlineKeyboardButton("General Commands", callback_data='help_general')],
             [InlineKeyboardButton("Game Commands", callback_data='help_games')],
             [InlineKeyboardButton("Point System", callback_data='help_points')],
-            [InlineKeyboardButton("Admin Commands", callback_data='help_admin')],
         ]
+        if is_admin(user_id):
+            main_menu_keyboard.append([InlineKeyboardButton("Admin Commands", callback_data='help_admin')])
+
         await query.edit_message_text(
             "Welcome to the help menu! Please choose a category:",
             reply_markup=InlineKeyboardMarkup(main_menu_keyboard)
@@ -2150,6 +2677,7 @@ async def start_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         [InlineKeyboardButton("Dice Game", callback_data=f'game:dice:{game_id}')],
         [InlineKeyboardButton("Connect Four", callback_data=f'game:connect_four:{game_id}')],
         [InlineKeyboardButton("Battleship", callback_data=f'game:battleship:{game_id}')],
+        [InlineKeyboardButton("Tic-Tac-Toe", callback_data=f'game:tictactoe:{game_id}')],
         [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2173,6 +2701,11 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Initialize Connect Four board (6 rows, 7 columns)
         games_data[game_id]['board'] = [[0 for _ in range(7)] for _ in range(6)]
         # Challenger goes first
+        games_data[game_id]['turn'] = games_data[game_id]['challenger_id']
+    elif game_type == 'tictactoe':
+        # Initialize Tic-Tac-Toe board (3x3)
+        games_data[game_id]['board'] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+        # Challenger (X) goes first
         games_data[game_id]['turn'] = games_data[game_id]['challenger_id']
 
     await save_games_data_async(games_data)
@@ -2256,6 +2789,16 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
         group_id = games_data[game_id]['group_id']
 
         user_points = get_user_points(group_id, user_id)
+
+        if points <= 0:
+            await send_and_track_message(
+                context,
+                update.effective_chat.id,
+                game_id,
+                "You must stake a positive number of points. Please enter a valid amount."
+            )
+            return STAKE_SUBMISSION_POINTS
+
         if user_points < points:
             await send_and_track_message(
                 context,
@@ -2308,6 +2851,23 @@ async def stake_submission_media(update: Update, context: ContextTypes.DEFAULT_T
         games_data[game_id]['challenger_stake'] = {"type": media_type, "value": file_id}
     await save_games_data_async(games_data)
 
+    # Log the media stake
+    user_id = str(update.effective_user.id)
+    stakes = load_media_stakes()
+    if user_id not in stakes:
+        stakes[user_id] = []
+
+    stake_info = {
+        "timestamp": time.time(),
+        "game_id": game_id,
+        "group_id": games_data[game_id]['group_id'],
+        "opponent_id": games_data[game_id]['opponent_id'] if user_id == str(games_data[game_id]['challenger_id']) else games_data[game_id]['challenger_id'],
+        "media_type": media_type,
+        "file_id": file_id
+    }
+    stakes[user_id].append(stake_info)
+    save_media_stakes(stakes)
+
     return await show_confirmation(update, context)
 
 async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
@@ -2346,6 +2906,17 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
             reply_markup=reply_markup,
             parse_mode='HTML'
         )
+    elif game['game_type'] == 'tictactoe':
+        challenger_member = await context.bot.get_chat_member(game['group_id'], game['challenger_id'])
+        reply_markup = create_tictactoe_board_markup(game['board'], game_id)
+        await send_and_track_message(
+            context,
+            game['group_id'],
+            game_id,
+            f"<b>Tic-Tac-Toe!</b>\n\nIt's {challenger_member.user.mention_html()}'s turn (❌).",
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
     elif game['game_type'] == 'battleship':
         challenger_id = str(game['challenger_id'])
         opponent_id = str(game['opponent_id'])
@@ -2380,12 +2951,14 @@ async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     games_data = await load_games_data_async()
     game = games_data[game_id]
 
-    if context.user_data.get('player_role') == 'opponent':
-        stake_type = game['opponent_stake']['type']
-        stake_value = game['opponent_stake']['value']
+    stake_dict = game.get('opponent_stake') if context.user_data.get('player_role') == 'opponent' else game.get('challenger_stake')
+
+    stake_display_text = ""
+    if stake_dict['type'] == 'points':
+        stake_display_text = f"{stake_dict['value']} points"
     else:
-        stake_type = game['challenger_stake']['type']
-        stake_value = game['challenger_stake']['value']
+        # Capitalize the first letter of the media type, e.g., 'photo' -> 'Photo'
+        stake_display_text = f"a {stake_dict['type'].capitalize()}"
 
     opponent_member = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
     opponent_name = get_display_name(opponent_member.user.id, opponent_member.user.full_name)
@@ -2393,7 +2966,7 @@ async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     confirmation_text = (
         f"<b>Game Setup Confirmation</b>\n\n"
         f"<b>Game:</b> {game['game_type']}\n"
-        f"<b>Your Stake:</b> {stake_value} {stake_type}\n"
+        f"<b>Your Stake:</b> {stake_display_text}\n"
         f"<b>Opponent:</b> {opponent_name}\n\n"
         f"Is this correct?"
     )
@@ -2547,6 +3120,15 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update_game_activity(active_game_id)
+
+    # Track the user's dice message for deletion
+    games_data = await load_games_data_async()
+    game = games_data[active_game_id]
+    game.setdefault('messages_to_delete', []).append({
+        'chat_id': update.effective_chat.id,
+        'message_id': update.message.message_id
+    })
+    await save_games_data_async(games_data)
 
     # This is a lot of logic for one function. I will break it down in the future if needed.
     last_roll = active_game.get('last_roll')
@@ -2742,8 +3324,10 @@ if __name__ == '__main__':
     # Register all commands using the new helper
     add_command(app, 'start', start_command)
     add_command(app, 'help', help_command)
+    add_command(app, 'game', game_command)
     add_command(app, 'command', command_list_command)
-    add_command(app, 'remove', remove_command)
+    add_command(app, 'disable', disable_command)
+    add_command(app, 'enable', enable_command)
     add_command(app, 'addreward', addreward_command)
     add_command(app, 'removereward', removereward_command)
     add_command(app, 'addpunishment', addpunishment_command)
@@ -2759,7 +3343,10 @@ if __name__ == '__main__':
     add_command(app, 'removepoints', removepoints_command)
     add_command(app, 'point', point_command)
     add_command(app, 'top5', top5_command)
-    add_command(app, 'setnickname', setnickname_command)
+    add_command(app, 'title', title_command)
+    add_command(app, 'removetitle', removetitle_command)
+    add_command(app, 'update', update_command)
+    add_command(app, 'viewstakes', viewstakes_command)
 
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
@@ -2770,7 +3357,7 @@ if __name__ == '__main__':
             CallbackQueryHandler(start_opponent_setup, pattern=r'^game:setup:opponent:.*')
         ],
         states={
-            GAME_SELECTION: [CallbackQueryHandler(game_selection, pattern=r'^game:(dice|connect_four|battleship):.*')],
+            GAME_SELECTION: [CallbackQueryHandler(game_selection, pattern=r'^game:(dice|connect_four|battleship|tictactoe):.*')],
             ROUND_SELECTION: [CallbackQueryHandler(round_selection, pattern=r'^rounds:\d+:.*')],
             STAKE_TYPE_SELECTION: [CallbackQueryHandler(stake_type_selection, pattern=r'^stake:(points|media):.*')],
             STAKE_SUBMISSION_POINTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, stake_submission_points)],
@@ -2800,6 +3387,7 @@ if __name__ == '__main__':
     app.add_handler(game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
     app.add_handler(CallbackQueryHandler(connect_four_move_handler, pattern=r'^c4:move:.*'))
+    app.add_handler(CallbackQueryHandler(tictactoe_move_handler, pattern=r'^ttt:move:.*'))
     app.add_handler(CallbackQueryHandler(bs_select_col_handler, pattern=r'^bs:col:.*'))
     app.add_handler(CallbackQueryHandler(bs_attack_handler, pattern=r'^bs:attack:.*'))
     app.add_handler(CallbackQueryHandler(help_menu_handler, pattern=r'^help_'))
