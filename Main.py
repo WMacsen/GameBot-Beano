@@ -558,10 +558,11 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
     messages_to_delete = game.get('messages_to_delete', [])
     logger.debug(f"Attempting to delete {len(messages_to_delete)} messages for game {game_id}.")
     for msg in messages_to_delete:
+        logger.debug(f"Deleting message {msg['message_id']} in chat {msg['chat_id']}")
         try:
             await context.bot.delete_message(chat_id=msg['chat_id'], message_id=msg['message_id'])
-        except Exception:
-            logger.warning(f"Failed to delete message {msg['message_id']} in chat {msg['chat_id']}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Explicitly failed to delete message {msg['message_id']}", exc_info=True)
 
     if game_id in games_data:
         games_data[game_id]['messages_to_delete'] = []
@@ -1652,36 +1653,11 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if str(game['challenger_id']) == str(loser_id):
         winner_id = game['opponent_id']
-        loser_stake = game['challenger_stake']
     else:
         winner_id = game['challenger_id']
-        loser_stake = game['opponent_stake']
 
-    loser_member = await context.bot.get_chat_member(game['group_id'], loser_id)
-    winner_member = await context.bot.get_chat_member(game['group_id'], winner_id)
-    loser_name = get_display_name(loser_id, loser_member.user.full_name)
-    winner_name = get_display_name(winner_id, winner_member.user.full_name)
-
-    if loser_stake['type'] == 'points':
-        message = f"{loser_name} is a loser! They lost {loser_stake['value']} points to {winner_name}."
-        await add_user_points(game['group_id'], winner_id, loser_stake['value'], context)
-        await add_user_points(game['group_id'], loser_id, -loser_stake['value'], context)
-        await context.bot.send_message(
-            game['group_id'],
-            message,
-            parse_mode='HTML'
-        )
-    else:
-        caption = f"{loser_name} is a loser! This was their stake."
-        if loser_stake['type'] == 'photo':
-            await context.bot.send_photo(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
-        elif loser_stake['type'] == 'video':
-            await context.bot.send_video(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
-        elif loser_stake['type'] == 'voice':
-            await context.bot.send_voice(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
-
-    game['status'] = 'complete'
-    await save_games_data_async(games_data)
+    # Announce the loser and handle stakes/deletion via the centralized function
+    await handle_game_over(context, latest_game_id, winner_id, int(loser_id))
 
 from datetime import datetime
 
@@ -2348,9 +2324,11 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     challenger = await context.bot.get_chat_member(game['group_id'], game['challenger_id'])
     opponent = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
 
-    await context.bot.send_message(
-        chat_id=game['group_id'],
-        text=f"The game between {challenger.user.mention_html()} and {opponent.user.mention_html()} is on!",
+    await send_and_track_message(
+        context,
+        game['group_id'],
+        game_id,
+        f"The game between {challenger.user.mention_html()} and {opponent.user.mention_html()} is on!",
         parse_mode='HTML'
     )
 
