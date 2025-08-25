@@ -2323,7 +2323,7 @@ async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================
 COMMAND_MAP = {
     'start': {'is_admin': False}, 'help': {'is_admin': False},
-    'command': {'is_admin': False}, 'remove': {'is_admin': True}, 'addreward': {'is_admin': True},
+    'command': {'is_admin': False}, 'disable': {'is_admin': True}, 'enable': {'is_admin': True}, 'addreward': {'is_admin': True},
     'removereward': {'is_admin': True}, 'addpunishment': {'is_admin': True},
     'removepunishment': {'is_admin': True}, 'punishment': {'is_admin': True},
     'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True},
@@ -2417,28 +2417,70 @@ def save_disabled_commands(data):
     with open(DISABLED_COMMANDS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# /remove - Remove a dynamic hashtag command or disable a static command (admin only)
+# /disable - Disable a static command (admin only)
 @command_handler_wrapper(admin_only=True)
-async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def disable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
         await update.message.reply_text("This command can only be used in group chats.")
         return
-    if not update.message or not context.args:
-        await update.message.reply_text("Usage: /remove <command>")
+    if not context.args:
+        await update.message.reply_text("Usage: /disable <command>")
         return
-    tag = context.args[0].lstrip('#/').lower()
-    # Static command disabling
-    if tag in COMMAND_MAP:
-        group_id = str(update.effective_chat.id)
-        disabled = load_disabled_commands()
-        disabled.setdefault(group_id, set())
-        # Convert to list for JSON
-        disabled[group_id] = list(set(disabled.get(group_id, [])) | {tag})
-        save_disabled_commands(disabled)
-        await update.message.reply_text(f"Command /{tag} has been disabled in this group. Admins can re-enable it with /enable {tag}.")
-        return
-    await update.message.reply_text(f"No such command: /{tag}")
 
+    cmd_to_disable = context.args[0].lstrip('/').lower()
+
+    if cmd_to_disable not in COMMAND_MAP:
+        await update.message.reply_text(f"No such command: /{cmd_to_disable}")
+        return
+
+    if cmd_to_disable in ['disable', 'enable']:
+        await update.message.reply_text(f"You cannot disable this command.")
+        return
+
+    group_id = str(update.effective_chat.id)
+    disabled_data = load_disabled_commands()
+
+    # Use a set for efficient add/check operations
+    disabled_in_group = set(disabled_data.get(group_id, []))
+    disabled_in_group.add(cmd_to_disable)
+    disabled_data[group_id] = list(disabled_in_group) # Convert back to list for JSON
+
+    save_disabled_commands(disabled_data)
+    await update.message.reply_text(f"Command /{cmd_to_disable} has been disabled in this group. Admins can re-enable it with /enable {cmd_to_disable}.")
+
+# /enable - Enable a static command (admin only)
+@command_handler_wrapper(admin_only=True)
+async def enable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type == "private":
+        await update.message.reply_text("This command can only be used in group chats.")
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /enable <command>")
+        return
+
+    cmd_to_enable = context.args[0].lstrip('/').lower()
+
+    if cmd_to_enable not in COMMAND_MAP:
+        await update.message.reply_text(f"No such command: /{cmd_to_enable}")
+        return
+
+    group_id = str(update.effective_chat.id)
+    disabled_data = load_disabled_commands()
+
+    if group_id not in disabled_data:
+        await update.message.reply_text(f"Command /{cmd_to_enable} is not disabled.")
+        return
+
+    # Use a set for efficient operations
+    disabled_in_group = set(disabled_data.get(group_id, []))
+
+    if cmd_to_enable in disabled_in_group:
+        disabled_in_group.remove(cmd_to_enable)
+        disabled_data[group_id] = list(disabled_in_group)
+        save_disabled_commands(disabled_data)
+        await update.message.reply_text(f"Command /{cmd_to_enable} has been enabled.")
+    else:
+        await update.message.reply_text(f"Command /{cmd_to_enable} is not disabled.")
 
 #Start command
 @command_handler_wrapper(admin_only=False)
@@ -3229,7 +3271,8 @@ if __name__ == '__main__':
     add_command(app, 'help', help_command)
     add_command(app, 'game', game_command)
     add_command(app, 'command', command_list_command)
-    add_command(app, 'remove', remove_command)
+    add_command(app, 'disable', disable_command)
+    add_command(app, 'enable', enable_command)
     add_command(app, 'addreward', addreward_command)
     add_command(app, 'removereward', removereward_command)
     add_command(app, 'addpunishment', addpunishment_command)
