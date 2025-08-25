@@ -3087,6 +3087,15 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update_game_activity(active_game_id)
 
+    # Track the user's dice message for deletion
+    games_data = await load_games_data_async()
+    game = games_data[active_game_id]
+    game.setdefault('messages_to_delete', []).append({
+        'chat_id': update.effective_chat.id,
+        'message_id': update.message.message_id
+    })
+    await save_games_data_async(games_data)
+
     # This is a lot of logic for one function. I will break it down in the future if needed.
     last_roll = active_game.get('last_roll')
 
