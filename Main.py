@@ -118,63 +118,105 @@ def save_user_titles(data):
 
 @command_handler_wrapper(admin_only=True)
 async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /title <user> <title> - Sets a title for a user. """
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /title <@username or user_id> <title>")
-        return
+    """ /title <user> <title> - Sets a title for a user. Can be used as a reply. """
+    target_user = None
+    title = ""
 
-    target_identifier = context.args[0]
-    title = " ".join(context.args[1:])
+    # Case 1: Command is a reply to a message
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+        if not context.args:
+            await update.message.reply_text("Usage (as reply): /title <the title>")
+            return
+        title = " ".join(context.args)
 
-    target_id = None
-    if target_identifier.isdigit():
-        target_id = int(target_identifier)
+    # Case 2: Command is not a reply, used with arguments
     else:
-        # This function might need adjustment to find non-admins
-        target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
+        if len(context.args) < 2:
+            await update.message.reply_text("Usage: /title <@username or user_id> <title>\nOr, reply to a user's message with: /title <the title>")
+            return
 
-    if not target_id:
-        await update.message.reply_text(f"Could not find user {target_identifier}.")
+        target_identifier = context.args[0]
+        title = " ".join(context.args[1:])
+
+        target_id = None
+        if target_identifier.isdigit():
+            target_id = int(target_identifier)
+        else:
+            target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
+
+        if not target_id:
+            await update.message.reply_text(f"Could not find user {target_identifier}.")
+            return
+
+        # We have an ID, but we need the user object for the display name later
+        try:
+            target_user = (await context.bot.get_chat_member(update.effective_chat.id, target_id)).user
+        except Exception:
+            await update.message.reply_text(f"Could not retrieve user information for ID {target_id}.")
+            return
+
+    if not target_user:
+        await update.message.reply_text("Could not determine target user.")
         return
 
     titles = load_user_titles()
-    titles[str(target_id)] = title
+    titles[str(target_user.id)] = title
     save_user_titles(titles)
 
-    try:
-        # Attempt to fetch the user to provide a nice confirmation message
-        member = await context.bot.get_chat_member(update.effective_chat.id, target_id)
-        display_name = get_display_name(target_id, member.user.full_name)
-        await update.message.reply_text(f"Title for {display_name} has been set.", parse_mode='HTML')
-    except Exception:
-        # Fallback in case the user is not in the group or something else goes wrong
-        await update.message.reply_text(f"Title for user {target_id} has been set to '{title}'.")
+    display_name = get_display_name(target_user.id, target_user.full_name)
+    await update.message.reply_text(f"Title for {display_name} has been set to '{html.escape(title)}'.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /removetitle <user> - Removes a title from a user. """
-    if len(context.args) < 1:
-        await update.message.reply_text("Usage: /removetitle <@username or user_id>")
-        return
+    """ /removetitle <user> - Removes a title from a user. Can be used as a reply. """
+    target_user = None
 
-    target_identifier = context.args[0]
-    target_id = None
-    if target_identifier.isdigit():
-        target_id = int(target_identifier)
+    # Case 1: Command is a reply to a message
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+        if context.args:
+            await update.message.reply_text("Usage (as reply): /removetitle (no arguments needed).")
+            return
+
+    # Case 2: Command is not a reply, used with an argument
     else:
-        target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
+        if len(context.args) != 1:
+            await update.message.reply_text("Usage: /removetitle <@username or user_id>\nOr, reply to a user's message with just: /removetitle")
+            return
 
-    if not target_id:
-        await update.message.reply_text(f"Could not find user {target_identifier}.")
+        target_identifier = context.args[0]
+        target_id = None
+        if target_identifier.isdigit():
+            target_id = int(target_identifier)
+        else:
+            target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
+
+        if not target_id:
+            await update.message.reply_text(f"Could not find user {target_identifier}.")
+            return
+
+        try:
+            target_user = (await context.bot.get_chat_member(update.effective_chat.id, target_id)).user
+        except Exception:
+            await update.message.reply_text(f"Could not retrieve user information for ID {target_id}.")
+            return
+
+    if not target_user:
+        await update.message.reply_text("Could not determine target user.")
         return
 
     titles = load_user_titles()
-    if str(target_id) in titles:
-        del titles[str(target_id)]
+    target_id_str = str(target_user.id)
+    display_name = get_display_name(target_user.id, target_user.full_name) # Get name before potentially removing title
+
+    if target_id_str in titles:
+        del titles[target_id_str]
         save_user_titles(titles)
-        await update.message.reply_text(f"Title for user {target_id} has been removed.")
+        # Use the name *without* the title for the confirmation message.
+        await update.message.reply_text(f"Title for {html.escape(target_user.full_name)} has been removed.", parse_mode='HTML')
     else:
-        await update.message.reply_text(f"User {target_id} does not have a title.")
+        await update.message.reply_text(f"User {display_name} does not have a title.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -358,12 +400,25 @@ async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(f"User {target_id} is not in the admin list.")
 
 async def get_user_id_by_username(context, chat_id, username) -> str:
-    """Get a user's Telegram ID by their username in a chat."""
-    for member in await context.bot.get_chat_administrators(chat_id):
-        if member.user.username and member.user.username.lower() == username.lower().lstrip('@'):
-            logger.debug(f"Found user ID {member.user.id} for username {username}")
-            return str(member.user.id)
-    logger.debug(f"Username {username} not found in chat {chat_id}")
+    """Get a user's Telegram ID by their username, using the profile cache."""
+    username_to_find = username.lower().lstrip('@')
+    profiles = load_user_profiles()
+    for uid, uname in profiles.items():
+        if uname and uname.lower() == username_to_find:
+            logger.debug(f"Found user ID {uid} for username {username} in cache.")
+            return str(uid)
+
+    # As a last resort, check admins if the user is not in the cache
+    try:
+        for member in await context.bot.get_chat_administrators(chat_id):
+            if member.user.username and member.user.username.lower() == username_to_find:
+                logger.debug(f"Found admin user ID {member.user.id} for username {username}")
+                cache_user_profile(member.user) # Cache them for next time
+                return str(member.user.id)
+    except Exception as e:
+        logger.error(f"Could not search chat admins for {username} in chat {chat_id}: {e}")
+
+    logger.debug(f"Username {username} not found in cache or admin list for chat {chat_id}")
     return None
 
 # =============================
