@@ -41,11 +41,13 @@ logger.debug(f"Environment variables: {os.environ}")
 
 # Load the Telegram bot token from environment variable
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
-BOT_USERNAME: Final = '@GameBot'  # Bot's username (update if needed)
+# IMPORTANT: UPDATE THESE VALUES FOR YOUR BOT
+BOT_USERNAME: Final = '@YourBotUsername'  # <--- CHANGE THIS to your bot's username
+OWNER_ID = 123456789  # <--- CHANGE THIS to your own Telegram User ID
+# END IMPORTANT
 
 # File paths for persistent data storage
 ADMIN_DATA_FILE = 'admins.json'          # Stores admin/owner info
-OWNER_ID = 7237569475  # Your Telegram ID (change to your actual Telegram user ID)
 
 
 # =========================
@@ -418,7 +420,7 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not response_lines:
             await update.message.reply_text("Admin list is already up to date for this group.")
         else:
-            await update.message.reply_text("\n".join(response_lines))
+            await update.message.reply_text("\n".join(response_lines), parse_mode='HTML')
 
     except Exception as e:
         logger.error(f"Failed to update admins: {e}", exc_info=True)
@@ -1006,7 +1008,8 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
 
     await context.bot.send_message(
         game['group_id'],
-        f"The game between {challenger_name} and {opponent_name} ended in a draw! Both players lose their stakes."
+        f"The game between {challenger_name} and {opponent_name} ended in a draw! Both players lose their stakes.",
+        parse_mode='HTML'
     )
 
     # Handle challenger's stake
@@ -1176,7 +1179,8 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
 
     await context.bot.send_message(
         game['group_id'],
-        f"Game between {challenger_name} and {opponent_name} has been cancelled due to inactivity. Both players lose their stakes."
+        f"Game between {challenger_name} and {opponent_name} has been cancelled due to inactivity. Both players lose their stakes.",
+        parse_mode='HTML'
     )
 
     # Handle challenger's stake
@@ -1422,7 +1426,8 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=int(opponent_id_str),
-            text=f"{attacker_name} fired at {coord_name}. {result_text}"
+            text=f"{attacker_name} fired at {coord_name}. {result_text}",
+            parse_mode='HTML'
         )
     except Exception as e:
         logger.warning(f"Failed to send attack result to victim: {e}")
@@ -2519,7 +2524,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Here are some commands to get you started:\n"
         "- `/help`: Shows a detailed, interactive help menu.\n"
         "- `/command`: Lists all available commands for the group you're in.\n\n"
-        "If you have any suggestions or find a bug, please contact my owner: @BeansOfBeano."
+        "If you have any suggestions or want your own version of this bot, please contact the developer: @BeansOfBeano."
     )
 
     # In a group, just give a prompt to start a private chat.
@@ -3254,7 +3259,8 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
 
         await context.bot.send_message(
             chat_id=challenger_id,
-            text=f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name)}."
+            text=f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name)}.",
+            parse_mode='HTML'
         )
 
         if challenger_stake['type'] == 'points':
