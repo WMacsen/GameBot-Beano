@@ -471,32 +471,39 @@ def get_chance_outcome():
         if random_num <= current_weight:
             return outcome['name']
 
+import asyncio
+
 # =============================
 # Game System Storage & Helpers
 # =============================
 GAMES_DATA_FILE = 'games.json'
+GAMES_DATA_LOCK = asyncio.Lock()
 
-def load_games_data():
-    if os.path.exists(GAMES_DATA_FILE):
-        with open(GAMES_DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+async def load_games_data_async():
+    """Asynchronously loads game data from the JSON file with a lock."""
+    async with GAMES_DATA_LOCK:
+        if os.path.exists(GAMES_DATA_FILE):
+            with open(GAMES_DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
 
-def save_games_data(data):
-    with open(GAMES_DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+async def save_games_data_async(data):
+    """Asynchronously saves game data to the JSON file with a lock."""
+    async with GAMES_DATA_LOCK:
+        with open(GAMES_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 # =============================
 # Game Logic Helpers
 # =============================
-def update_game_activity(game_id: str):
+async def update_game_activity(game_id: str):
     """Updates the last_activity timestamp for a game and resets the warning flag."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     if game_id in games_data:
         games_data[game_id]['last_activity'] = time.time()
         games_data[game_id].pop('warning_sent', None) # Remove warning flag on any activity
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
 
 def create_connect_four_board_markup(board: list, game_id: str):
     """Creates the text and markup for a Connect Four board."""
@@ -543,12 +550,14 @@ def check_connect_four_draw(board: list) -> bool:
 
 async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Deletes all tracked messages for a game and clears the list."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game:
         return
 
-    for msg in game.get('messages_to_delete', []):
+    messages_to_delete = game.get('messages_to_delete', [])
+    logger.debug(f"Attempting to delete {len(messages_to_delete)} messages for game {game_id}.")
+    for msg in messages_to_delete:
         try:
             await context.bot.delete_message(chat_id=msg['chat_id'], message_id=msg['message_id'])
         except Exception:
@@ -556,21 +565,22 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
 
     if game_id in games_data:
         games_data[game_id]['messages_to_delete'] = []
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
 
 
 async def send_and_track_message(context, chat_id, game_id, text, **kwargs):
     """Sends a message and tracks it for later deletion."""
     sent_message = await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     if game_id in games_data:
+        logger.debug(f"Tracking message {sent_message.message_id} in chat {chat_id} for game {game_id}")
         games_data[game_id].setdefault('messages_to_delete', []).append({'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id})
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
     return sent_message
 
 async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, winner_id: int, loser_id: int):
     """Handles the end of a game, distributing stakes."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data[game_id]
 
     if str(game['challenger_id']) == str(loser_id):
@@ -619,7 +629,7 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
             logger.warning(f"Failed to send loss message to {loser_id}: {e}")
 
     game['status'] = 'complete'
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
     await delete_tracked_messages(context, game_id)
 
 
@@ -633,7 +643,7 @@ async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAUL
     col = int(col_str)
     user_id = query.from_user.id
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data.get(game_id)
 
     if not game or game.get('status') != 'active':
@@ -687,12 +697,12 @@ async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAUL
         board_text, _ = create_connect_four_board_markup(board, game_id)
         await query.edit_message_text(f"<b>Connect Four - Draw!</b>\n\n{board_text}\nThe game is a draw!")
         game['status'] = 'complete'
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
         return
 
     # Switch turns
     game['turn'] = game['opponent_id'] if user_id == game['challenger_id'] else game['challenger_id']
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     # Update board message
     turn_player_id = game['turn']
@@ -744,7 +754,7 @@ def generate_bs_board_text(board: list, show_ships: bool = True) -> str:
 
 async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Handles cancellation of a game due to inactivity, both players lose."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     if game_id not in games_data:
         return
     game = games_data[game_id]
@@ -795,12 +805,12 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
                 await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption)
 
     game['status'] = 'complete'
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
     await delete_tracked_messages(context, game_id)
 
 async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
     """Periodically checks for inactive games and handles them."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     now = time.time()
 
     # Create a copy of items to avoid issues with modifying dict during iteration
@@ -828,7 +838,7 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='HTML'
                 )
                 games_data[game_id]['warning_sent'] = True
-                save_games_data(games_data)
+                await save_games_data_async(games_data)
             except Exception as e:
                 logger.error(f"Failed to send inactivity warning for game {game_id}: {e}")
 
@@ -863,7 +873,7 @@ async def generate_public_bs_board_message(context: ContextTypes.DEFAULT_TYPE, g
 
 async def bs_start_game_in_group(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Announces the start of the Battleship game in the group chat and prompts the first player."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data[game_id]
 
     # Generate and send the public board message
@@ -877,7 +887,7 @@ async def bs_start_game_in_group(context: ContextTypes.DEFAULT_TYPE, game_id: st
     # Store the message ID
     game['group_message_id'] = public_message.message_id
     games_data[game_id] = game
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     # Send the private turn message with attack buttons
     await bs_send_turn_message(context, game_id)
@@ -888,7 +898,7 @@ def check_bs_ship_sunk(board: list, ship_coords: list) -> bool:
 
 async def bs_send_turn_message(context: ContextTypes.DEFAULT_TYPE, game_id: str, message_id: int = None, chat_id: int = None):
     """Sends the private message to the current player to make their move."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data[game_id]
 
     player_id_str = str(game['turn'])
@@ -945,7 +955,7 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     r, c = int(r_str), int(c_str)
     user_id_str = str(query.from_user.id)
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data.get(game_id)
 
     if not game or game.get('status') != 'active':
@@ -989,7 +999,7 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     game['turn'] = int(opponent_id_str)
-    save_games_data(games_data) # Save the new turn and board state
+    await save_games_data_async(games_data) # Save the new turn and board state
 
     # Update the public board message
     public_board_text = await generate_public_bs_board_message(context, game)
@@ -1027,7 +1037,7 @@ async def bs_start_placement(update: Update, context: ContextTypes.DEFAULT_TYPE)
     *_, game_id = query.data.split(':')
     user_id = str(query.from_user.id)
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game:
         await query.edit_message_text("This game no longer exists.")
@@ -1060,7 +1070,7 @@ async def bs_handle_placement(update: Update, context: ContextTypes.DEFAULT_TYPE
     update_game_activity(game_id)
 
     user_id = str(update.effective_user.id)
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data[game_id]
     board = game['boards'][user_id]
 
@@ -1104,12 +1114,12 @@ async def bs_handle_placement(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     context.user_data['bs_ships_to_place'].pop(0)
 
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
     board_text = generate_bs_board_text(board)
 
     if not context.user_data['bs_ships_to_place']:
         game['placement_complete'][user_id] = True
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
 
         text = f"<pre>Final board:\n{board_text}\nAll ships placed! Waiting for opponent...</pre>"
         await send_and_track_message(context, update.effective_chat.id, game_id, text, parse_mode='HTML')
@@ -1139,7 +1149,7 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Cancels the ship placement conversation and aborts the game."""
     game_id = context.user_data.get('bs_game_id')
     if game_id:
-        games_data = load_games_data()
+        games_data = await load_games_data_async()
         if game_id in games_data:
             game = games_data[game_id]
             # Notify the other player if possible
@@ -1155,8 +1165,10 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             # Delete tracked messages and then the game
             await delete_tracked_messages(context, game_id)
-            del games_data[game_id]
-            save_games_data(games_data)
+            # The game data is deleted within delete_tracked_messages, but to be safe:
+            if game_id in games_data:
+                del games_data[game_id]
+            await save_games_data_async(games_data)
 
     await update.message.reply_text("Ship placement cancelled. The game has been aborted.")
     context.user_data.clear()
@@ -1552,7 +1564,7 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You cannot challenge yourself.")
         return
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     group_id = update.effective_chat.id
     for game in games_data.values():
         if game.get('group_id') == group_id and game.get('status') != 'complete':
@@ -1571,7 +1583,7 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "messages_to_delete": [],
         "last_activity": time.time()
     }
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     challenger_name = get_display_name(challenger_user.id, challenger_user.full_name)
     opponent_name = get_display_name(opponent_user.id, opponent_user.full_name)
@@ -1624,7 +1636,7 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Could not find user {loser_username}.")
             return
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
 
     latest_game_id = None
     for game_id, game in games_data.items():
@@ -1670,7 +1682,7 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_voice(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
 
     game['status'] = 'complete'
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
 from datetime import datetime
 
@@ -1746,7 +1758,7 @@ async def cleangames_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("This command can only be used in group chats.")
         return
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     games_to_keep = {
         game_id: game for game_id, game in games_data.items()
         if game.get('status') != 'complete'
@@ -1755,7 +1767,7 @@ async def cleangames_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if len(games_to_keep) == len(games_data):
         await update.message.reply_text("No completed games to clean up.")
     else:
-        save_games_data(games_to_keep)
+        await save_games_data_async(games_to_keep)
         await update.message.reply_text("Cleaned up completed games.")
 
 @command_handler_wrapper(admin_only=True)
@@ -2176,7 +2188,7 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
     _, game_type, game_id = query.data.split(':')
     update_game_activity(game_id)
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     games_data[game_id]['game_type'] = game_type
 
     if game_type == 'connect_four':
@@ -2185,7 +2197,7 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Challenger goes first
         games_data[game_id]['turn'] = games_data[game_id]['challenger_id']
 
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     if game_type == 'dice':
         keyboard = [
@@ -2223,9 +2235,9 @@ async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     rounds = int(rounds_str)
 
     context.user_data['game_id'] = game_id
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     games_data[game_id]['rounds_to_play'] = rounds
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     keyboard = [
         [InlineKeyboardButton("Points", callback_data=f'stake:points:{game_id}')],
@@ -2262,7 +2274,7 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
         user_id = update.effective_user.id
         game_id = context.user_data['game_id']
         update_game_activity(game_id)
-        games_data = load_games_data()
+        games_data = await load_games_data_async()
         group_id = games_data[game_id]['group_id']
 
         user_points = get_user_points(group_id, user_id)
@@ -2279,7 +2291,7 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
             games_data[game_id]['opponent_stake'] = {"type": "points", "value": points}
         else:
             games_data[game_id]['challenger_stake'] = {"type": "points", "value": points}
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
 
         # Proceed to confirmation for both players
         return await show_confirmation(update, context)
@@ -2310,19 +2322,19 @@ async def stake_submission_media(update: Update, context: ContextTypes.DEFAULT_T
 
     game_id = context.user_data['game_id']
     update_game_activity(game_id)
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
 
     if context.user_data.get('player_role') == 'opponent':
         games_data[game_id]['opponent_stake'] = {"type": media_type, "value": file_id}
     else:
         games_data[game_id]['challenger_stake'] = {"type": media_type, "value": file_id}
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     return await show_confirmation(update, context)
 
 async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Initializes and starts the game after setup is complete."""
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data[game_id]
 
     if game['game_type'] == 'dice':
@@ -2332,7 +2344,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
         game['last_roll'] = None
 
     game['status'] = 'active'
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     challenger = await context.bot.get_chat_member(game['group_id'], game['challenger_id'])
     opponent = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
@@ -2364,7 +2376,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
         game['ships'] = {challenger_id: {}, opponent_id: {}}
         game['placement_complete'] = {challenger_id: False, opponent_id: False}
         game['turn'] = game['challenger_id']
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
 
         placement_keyboard = [[InlineKeyboardButton("Begin Ship Placement", callback_data=f'bs:placement:start:{game_id}')]]
         placement_markup = InlineKeyboardMarkup(placement_keyboard)
@@ -2385,7 +2397,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
 async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Shows the confirmation message."""
     game_id = context.user_data['game_id']
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data[game_id]
 
     if context.user_data.get('player_role') == 'opponent':
@@ -2427,7 +2439,7 @@ async def start_opponent_setup(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     *_, game_id = query.data.split(':')
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data.get(game_id)
 
     if not game or game['opponent_id'] != query.from_user.id:
@@ -2465,11 +2477,11 @@ async def cancel_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if game_id:
         await delete_tracked_messages(context, game_id)
-        games_data = load_games_data()
+        games_data = await load_games_data_async()
         # Ensure the game data is removed after cleaning messages
         if game_id in games_data:
             del games_data[game_id]
-            save_games_data(games_data)
+            await save_games_data_async(games_data)
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -2492,11 +2504,11 @@ async def send_challenge_to_opponent(update: Update, context: ContextTypes.DEFAU
     """Confirms the game setup and sends the challenge to the group."""
     query = update.callback_query
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data[game_id]
 
     game['status'] = 'pending_opponent_acceptance'
-    save_games_data(games_data)
+    await save_games_data_async(games_data)
 
     challenger_member = await context.bot.get_chat_member(game['group_id'], game['challenger_id'])
     opponent_member = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
@@ -2539,7 +2551,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = update.effective_user.id
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
 
     active_game_id = None
     active_game = None
@@ -2561,7 +2573,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not last_roll: # First roll of a round
         active_game['last_roll'] = {'user_id': user_id, 'value': update.message.dice.value}
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
         other_player_id = active_game['challenger_id'] if user_id == active_game['opponent_id'] else active_game['opponent_id']
         other_player_member = await context.bot.get_chat_member(active_game['group_id'], other_player_id)
         other_player_name = get_display_name(other_player_id, other_player_member.user.full_name)
@@ -2585,7 +2597,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else: # Tie
         await send_and_track_message(context, update.effective_chat.id, active_game_id, f"You both rolled a {player1_roll}. It's a tie! Roll again.")
         active_game['last_roll'] = None # Reset for re-roll
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
         return
 
     # Update scores
@@ -2651,12 +2663,12 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_voice(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
 
         game['status'] = 'complete'
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
     else:
         # Next round
         active_game['current_round'] += 1
         active_game['last_roll'] = None
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
         await context.bot.send_message(
             chat_id=active_game['group_id'],
             text=f"Round {active_game['current_round']}! It's anyone's turn to roll."
@@ -2668,9 +2680,9 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
     await query.answer()
 
     _, response_type, game_id = query.data.split(':')
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
 
-    games_data = load_games_data()
+    games_data = await load_games_data_async()
     game = games_data.get(game_id)
 
     if not game:
@@ -2684,7 +2696,7 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
 
     if response_type == 'accept':
         game['status'] = 'pending_opponent_stake'
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
 
         await query.edit_message_text("Challenge accepted! Please check your private messages to set up your stake.")
 
@@ -2742,7 +2754,7 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
                 await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
 
         del games_data[game_id]
-        save_games_data(games_data)
+        await save_games_data_async(games_data)
 
         await query.edit_message_text("Challenge refused.")
 
