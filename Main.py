@@ -160,12 +160,15 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Could not determine target user.")
         return
 
+    # Create the mention string BEFORE setting the title, so it uses the original name.
+    original_user_mention = f'<a href="tg://user?id={target_user.id}">{html.escape(target_user.full_name)}</a>'
+
     titles = load_user_titles()
     titles[str(target_user.id)] = title
     save_user_titles(titles)
 
-    display_name = get_display_name(target_user.id, target_user.full_name)
-    await update.message.reply_text(f"Title for {display_name} has been set to '{html.escape(title)}'.", parse_mode='HTML')
+    # Now, use the original mention in the confirmation message.
+    await update.message.reply_text(f"Title for {original_user_mention} has been set to '{html.escape(title)}'.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
