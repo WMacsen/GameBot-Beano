@@ -2764,17 +2764,19 @@ def add_command(app: Application, command: str, handler):
     app.add_handler(MessageHandler(filters.Regex(rf'^!{command}(\s|$)'), message_handler_wrapper))
 
 
+async def post_init(application: Application) -> None:
+    """Post initialization function for the application."""
+    context = CallbackContext(application=application)
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(check_game_inactivity, 'interval', minutes=1, args=[context])
+    scheduler.start()
+
+
 if __name__ == '__main__':
     logger.info('Starting Telegram Bot...')
     logger.debug(f'TOKEN value: {TOKEN}')
 
-    app = Application.builder().token(TOKEN).build()
-
-    # Set up the job scheduler
-    context = CallbackContext(application=app)
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_game_inactivity, 'interval', minutes=1, args=[context])
-    scheduler.start()
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     #Commands
     # Register all commands using the new helper
