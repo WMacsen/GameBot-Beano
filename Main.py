@@ -180,14 +180,16 @@ def is_owner(user_id):
 
 def get_display_name(user_id: int, full_name: str) -> str:
     """
-    Determines the display name for a user based on their admin status and nickname.
+    Determines the display name for a user, returning a taggable HTML mention.
+    If the user is an admin with a nickname, the nickname is used as the link text.
+    Otherwise, the user's full name is used.
     """
     nicknames = load_admin_nicknames()
-    # Non-admins don't have nicknames, so we prefer their full name.
-    # Admins can have nicknames, so we check for that first.
+    display_text = full_name
     if is_admin(user_id):
-        return nicknames.get(str(user_id), full_name)
-    return full_name
+        display_text = nicknames.get(str(user_id), full_name)
+
+    return f'<a href="tg://user?id={user_id}">{html.escape(display_text)}</a>'
 
 def is_admin(user_id):
     """Check if the user is an admin or the owner."""
@@ -550,7 +552,7 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
         try:
             await context.bot.delete_message(chat_id=msg['chat_id'], message_id=msg['message_id'])
         except Exception:
-            pass  # Ignore errors
+            logger.warning(f"Failed to delete message {msg['message_id']} in chat {msg['chat_id']}", exc_info=True)
 
     if game_id in games_data:
         games_data[game_id]['messages_to_delete'] = []
@@ -1069,14 +1071,14 @@ async def bs_handle_placement(update: Update, context: ContextTypes.DEFAULT_TYPE
     parts = text.split()
 
     if len(parts) != 2:
-        await update.message.reply_text("Invalid format. Please use A1 H or A1 V.")
+        await send_and_track_message(context, update.effective_chat.id, game_id, "Invalid format. Please use A1 H or A1 V.")
         return BS_AWAITING_PLACEMENT
 
     start_coord_str, orientation = parts
     start_pos = parse_bs_coords(start_coord_str)
 
     if not start_pos or orientation not in ['H', 'V']:
-        await update.message.reply_text("Invalid coordinate or orientation. Use A1 H or B2 V.")
+        await send_and_track_message(context, update.effective_chat.id, game_id, "Invalid coordinate or orientation. Use A1 H or B2 V.")
         return BS_AWAITING_PLACEMENT
 
     r_start, c_start = start_pos
@@ -1586,13 +1588,13 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         keyboard = [[InlineKeyboardButton("Start Game Setup", callback_data=f"game:setup:start:{game_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        sent_message = await context.bot.send_message(
-            chat_id=challenger_user.id,
-            text="Let's set up your game! Click the button below to begin.",
+        await send_and_track_message(
+            context,
+            challenger_user.id,
+            game_id,
+            "Let's set up your game! Click the button below to begin.",
             reply_markup=reply_markup
         )
-        games_data[game_id]['messages_to_delete'].append({'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id})
-        save_games_data(games_data)
     except Exception:
         logger.exception(f"Failed to send private message to user {challenger_user.id}")
         await context.bot.send_message(
@@ -1892,7 +1894,7 @@ async def point_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if target_user.id == user.id:
         await update.message.reply_text(f"You have {points} points.")
     else:
-        await update.message.reply_text(f"{display_name} has {points} points.")
+        await update.message.reply_text(f"{display_name} has {points} points.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2265,9 +2267,12 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
 
         user_points = get_user_points(group_id, user_id)
         if user_points < points:
-            sent_message = await update.message.reply_text(f"You don't have enough points. You have {user_points}, but you tried to stake {points}. Please enter a valid amount.")
-            games_data[game_id]['messages_to_delete'].append({'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id})
-            save_games_data(games_data)
+            await send_and_track_message(
+                context,
+                update.effective_chat.id,
+                game_id,
+                f"You don't have enough points. You have {user_points}, but you tried to stake {points}. Please enter a valid amount."
+            )
             return STAKE_SUBMISSION_POINTS
 
         if context.user_data.get('player_role') == 'opponent':
@@ -2280,7 +2285,7 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
         return await show_confirmation(update, context)
 
     except ValueError:
-        await update.message.reply_text("Please enter a valid number of points.")
+        await send_and_track_message(context, update.effective_chat.id, context.user_data['game_id'], "Please enter a valid number of points.")
         return STAKE_SUBMISSION_POINTS
 
 async def stake_submission_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2300,11 +2305,7 @@ async def stake_submission_media(update: Update, context: ContextTypes.DEFAULT_T
         file_id = message.voice.file_id
         media_type = 'voice'
     else:
-        sent_message = await update.message.reply_text("That is not a valid media file. Please send a photo, video, or voice note.")
-        game_id = context.user_data['game_id']
-        games_data = load_games_data()
-        games_data[game_id]['messages_to_delete'].append({'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id})
-        save_games_data(games_data)
+        await send_and_track_message(context, update.effective_chat.id, context.user_data['game_id'], "That is not a valid media file. Please send a photo, video, or voice note.")
         return STAKE_SUBMISSION_MEDIA
 
     game_id = context.user_data['game_id']
@@ -2416,7 +2417,7 @@ async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if update.callback_query:
         await update.callback_query.edit_message_text(confirmation_text, reply_markup=reply_markup, parse_mode='HTML')
     else:
-        await update.message.reply_text(confirmation_text, reply_markup=reply_markup, parse_mode='HTML')
+        await send_and_track_message(context, update.effective_chat.id, game_id, confirmation_text, reply_markup=reply_markup, parse_mode='HTML')
 
     return CONFIRMATION
 
@@ -2690,9 +2691,11 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
         keyboard = [[InlineKeyboardButton("Set your stakes", callback_data=f"game:setup:opponent:{game_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="You have accepted the challenge! Click the button below to set up your stake.",
+            await send_and_track_message(
+                context,
+                user_id,
+                game_id,
+                "You have accepted the challenge! Click the button below to set up your stake.",
                 reply_markup=reply_markup
             )
         except telegram.error.Forbidden:
