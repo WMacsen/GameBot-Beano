@@ -360,12 +360,12 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_id_str = str(admin.user.id)
             if admin_id_str not in current_admins:
                 current_admins.add(admin_id_str)
-                new_admins_found.append(f"{admin.user.full_name} ({admin_id_str})")
+                new_admins_found.append(admin.user.full_name)
 
         if new_admins_found:
             admin_data['admins'] = list(current_admins)
             save_admin_data(admin_data)
-            await update.message.reply_text(f"Admins updated. New admins added:\n" + "\n".join(new_admins_found))
+            await update.message.reply_text(f"Admins updated. New admins added:\n" + "\n".join(html.escape(name) for name in new_admins_found))
         else:
             await update.message.reply_text("No new admins found in this group.")
 
