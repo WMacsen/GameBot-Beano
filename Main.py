@@ -639,7 +639,7 @@ async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
 
     _, _, game_id, col_str = query.data.split(':')
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
     col = int(col_str)
     user_id = query.from_user.id
 
@@ -951,7 +951,7 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     _, _, game_id, r_str, c_str = query.data.split(':')
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
     r, c = int(r_str), int(c_str)
     user_id_str = str(query.from_user.id)
 
@@ -1067,7 +1067,7 @@ async def bs_handle_placement(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Handles the user's input for placing a single ship."""
     game_id = context.user_data.get('bs_game_id')
     if not game_id: return ConversationHandler.END
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
 
     user_id = str(update.effective_user.id)
     games_data = await load_games_data_async()
@@ -2186,7 +2186,7 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
     _, game_type, game_id = query.data.split(':')
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
     games_data = await load_games_data_async()
     games_data[game_id]['game_type'] = game_type
 
@@ -2230,7 +2230,7 @@ async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
     _, rounds_str, game_id = query.data.split(':')
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
     rounds = int(rounds_str)
 
     context.user_data['game_id'] = game_id
@@ -2272,7 +2272,7 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
         points = int(update.message.text)
         user_id = update.effective_user.id
         game_id = context.user_data['game_id']
-        update_game_activity(game_id)
+        await update_game_activity(game_id)
         games_data = await load_games_data_async()
         group_id = games_data[game_id]['group_id']
 
@@ -2320,7 +2320,7 @@ async def stake_submission_media(update: Update, context: ContextTypes.DEFAULT_T
         return STAKE_SUBMISSION_MEDIA
 
     game_id = context.user_data['game_id']
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
     games_data = await load_games_data_async()
 
     if context.user_data.get('player_role') == 'opponent':
@@ -2490,7 +2490,7 @@ async def confirm_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     _, role, game_id = query.data.split(':')
-    update_game_activity(game_id)
+    await update_game_activity(game_id)
 
     if role == 'challenger':
         return await send_challenge_to_opponent(update, context, game_id)
@@ -2565,7 +2565,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not active_game:
         return
 
-    update_game_activity(active_game_id)
+    await update_game_activity(active_game_id)
 
     # This is a lot of logic for one function. I will break it down in the future if needed.
     last_roll = active_game.get('last_roll')
@@ -2620,49 +2620,14 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if active_game['challenger_score'] >= rounds_to_win or active_game['opponent_score'] >= rounds_to_win:
         # Game over
         if active_game['challenger_score'] > active_game['opponent_score']:
-            game_winner_id = active_game['challenger_id']
-            game_loser_id = active_game['opponent_id']
+            winner_id = active_game['challenger_id']
+            loser_id = active_game['opponent_id']
         else:
-            game_winner_id = active_game['opponent_id']
-            game_loser_id = active_game['challenger_id']
+            winner_id = active_game['opponent_id']
+            loser_id = active_game['challenger_id']
 
-        # Enact loser logic by calling the /loser command's logic
-        # This is code duplication. A better design would be to have a separate function.
-        # For now, I will duplicate the logic from loser_command.
-        game = active_game
-        loser_id = game_loser_id
-        winner_id = game_winner_id
-
-        if str(game['challenger_id']) == str(loser_id):
-            loser_stake = game['challenger_stake']
-        else:
-            loser_stake = game['opponent_stake']
-
-        loser_member = await context.bot.get_chat_member(game['group_id'], loser_id)
-        winner_member = await context.bot.get_chat_member(game['group_id'], winner_id)
-
-        loser_name = get_display_name(loser_id, loser_member.user.full_name)
-        winner_name = get_display_name(winner_id, winner_member.user.full_name)
-        if loser_stake['type'] == 'points':
-            await add_user_points(game['group_id'], winner_id, loser_stake['value'], context)
-            await add_user_points(game['group_id'], loser_id, -loser_stake['value'], context)
-            message = f"{loser_name} is a loser! They lost {loser_stake['value']} points to {winner_name}."
-            await context.bot.send_message(
-                game['group_id'],
-                message,
-                parse_mode='HTML'
-            )
-        else:
-            caption = f"{loser_name} is a loser! This was their stake."
-            if loser_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
-            elif loser_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
-            elif loser_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
-
-        game['status'] = 'complete'
-        await save_games_data_async(games_data)
+        await handle_game_over(context, active_game_id, winner_id, loser_id)
+        return
     else:
         # Next round
         active_game['current_round'] += 1
