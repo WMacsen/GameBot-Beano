@@ -3264,9 +3264,11 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     winner_name = get_display_name(winner_id, winner_member.user.full_name)
     win_message = f"{winner_name} wins round {active_game['current_round']}!\n" \
                   f"Score: {active_game['challenger_score']} - {active_game['opponent_score']}"
-    await context.bot.send_message(
-        chat_id=active_game['group_id'],
-        text=win_message,
+    await send_and_track_message(
+        context,
+        active_game['group_id'],
+        active_game_id,
+        win_message,
         parse_mode='HTML'
     )
 
@@ -3288,9 +3290,11 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Next round
         active_game['current_round'] += 1
         active_game['last_roll'] = None
-        await context.bot.send_message(
-            chat_id=active_game['group_id'],
-            text=f"Round {active_game['current_round']}! It's anyone's turn to roll."
+        await send_and_track_message(
+            context,
+            active_game['group_id'],
+            active_game_id,
+            f"Round {active_game['current_round']}! It's anyone's turn to roll."
         )
 
     await save_games_data_async(games_data)
