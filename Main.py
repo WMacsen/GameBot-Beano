@@ -3202,39 +3202,36 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games_data = await load_games_data_async()
 
     active_game_id = None
-    active_game = None
     for game_id, game in games_data.items():
         if game.get('game_type') == 'dice' and \
            game.get('status') == 'active' and \
            (game.get('challenger_id') == user_id or game.get('opponent_id') == user_id):
             active_game_id = game_id
-            active_game = game
             break
 
-    if not active_game:
+    if not active_game_id:
         return
+
+    # Get a direct reference to the game object from the loaded data
+    active_game = games_data[active_game_id]
 
     await update_game_activity(active_game_id)
 
     # Track the user's dice message for deletion
-    games_data = await load_games_data_async()
-    game = games_data[active_game_id]
-    game.setdefault('messages_to_delete', []).append({
+    active_game.setdefault('messages_to_delete', []).append({
         'chat_id': update.effective_chat.id,
         'message_id': update.message.message_id
     })
-    await save_games_data_async(games_data)
 
-    # This is a lot of logic for one function. I will break it down in the future if needed.
     last_roll = active_game.get('last_roll')
 
     if not last_roll: # First roll of a round
         active_game['last_roll'] = {'user_id': user_id, 'value': update.message.dice.value}
-        await save_games_data_async(games_data)
         other_player_id = active_game['challenger_id'] if user_id == active_game['opponent_id'] else active_game['opponent_id']
         other_player_member = await context.bot.get_chat_member(active_game['group_id'], other_player_id)
         other_player_name = get_display_name(other_player_id, other_player_member.user.full_name)
         await send_and_track_message(context, update.effective_chat.id, active_game_id, f"You rolled a {update.message.dice.value}. Waiting for {other_player_name} to roll.", parse_mode='HTML')
+        await save_games_data_async(games_data) # Save the updated game data
         return
 
     if last_roll['user_id'] == user_id:
@@ -3284,17 +3281,19 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             winner_id = active_game['opponent_id']
             loser_id = active_game['challenger_id']
 
+        await save_games_data_async(games_data) # Save final state before game over
         await handle_game_over(context, active_game_id, winner_id, loser_id)
         return
     else:
         # Next round
         active_game['current_round'] += 1
         active_game['last_roll'] = None
-        await save_games_data_async(games_data)
         await context.bot.send_message(
             chat_id=active_game['group_id'],
             text=f"Round {active_game['current_round']}! It's anyone's turn to roll."
         )
+
+    await save_games_data_async(games_data)
 
 async def challenge_response_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the opponent's response to a game challenge."""
