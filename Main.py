@@ -2127,43 +2127,67 @@ async def chance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cooldowns[user_id] = user_data
     save_cooldowns(cooldowns)
 
-    plays_left = 3 - user_data['count']
-    await update.message.reply_text(f"You spin the wheel of fortune... (You have {plays_left} {'play' if plays_left == 1 else 'plays'} left today)")
+    plays_left = 3 - user_data["count"]
+
+    # Let the user know the bot is working and simulate the spin
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=telegram.constants.ChatAction.TYPING)
+    await asyncio.sleep(1.5)
 
     outcome = get_chance_outcome()
     group_id = str(update.effective_chat.id)
 
+    msg_lines = ["You spin the wheel of fortune... and the result is...\n"]
+    parse_mode = 'HTML'  # Default to HTML since most outcomes use it now
+
     if outcome == "plus_50":
         await add_user_points(group_id, user_id, 50, context)
-        await update.message.reply_text("Congratulations! You won 50 points!")
+        msg_lines.append("<b>Congratulations! You won 50 points!</b>")
     elif outcome == "minus_100":
         await add_user_points(group_id, user_id, -100, context)
-        await update.message.reply_text("Ouch! You lost 100 points.")
+        msg_lines.append("<b>Ouch! You lost 100 points.</b>")
     elif outcome == "chastity_2_days":
-        await update.message.reply_text("Your fate is 2 days of chastity!")
+        msg_lines.append("Your fate is <b>2 days of chastity!</b>")
     elif outcome == "chastity_7_days":
-        await update.message.reply_text("Your fate is 7 days of chastity! Good luck.")
+        msg_lines.append("Your fate is <b>7 days of chastity!</b> Good luck.")
     elif outcome == "nothing":
-        await update.message.reply_text("Nothing happened. Better luck next time!")
+        msg_lines.append("Nothing happened. Better luck next time!")
+        parse_mode = None # This one doesn't need HTML
     elif outcome == "lose_all_points":
         points = get_user_points(group_id, user_id)
-        await add_user_points(group_id, user_id, -points, context)
-        await update.message.reply_text("Catastrophic failure! You lost all your points.")
+        if points > 0:
+            await add_user_points(group_id, user_id, -points, context)
+            msg_lines.append(f"<b>Catastrophic failure! You lost all your {points} points.</b>")
+        else:
+            msg_lines.append("<b>Catastrophic failure! You lost all your points!</b> (Which was 0 anyway).")
     elif outcome == "double_points":
         points = get_user_points(group_id, user_id)
-        await add_user_points(group_id, user_id, points, context)
-        await update.message.reply_text("Jackpot! Your points have been doubled!")
+        if points > 0:
+            await add_user_points(group_id, user_id, points, context)
+            msg_lines.append(f"<b>Jackpot! Your points have been doubled to {points * 2}!</b>")
+        else:
+            msg_lines.append("<b>Jackpot! Your points have been doubled!</b> (But 2 x 0 is still 0).")
     elif outcome == "free_reward":
         rewards = get_rewards_list(group_id)
-        msg = "<b>You won a free reward!</b>\nChoose one of the following:\n"
-        for r in rewards:
-            msg += f"• <b>{r['name']}</b>\n"
-        msg += "\nReply with the name of the reward you want."
-        context.user_data[FREE_REWARD_SELECTION] = {'group_id': group_id}
-        await update.message.reply_text(msg, parse_mode='HTML')
+        rewards = [r for r in rewards if r['name'].lower() != 'other'] # Exclude 'Other'
+        if not rewards:
+            msg_lines.append("You won a free reward, but no rewards are configured! Contact an admin.")
+            parse_mode = None
+        else:
+            msg_lines = ["<b>You won a free reward!</b>\nChoose one of the following:"]
+            for r in rewards:
+                msg_lines.append(f"• {html.escape(r['name'])}")
+            msg_lines.append("\nReply with the name of the reward you want.")
+            context.user_data[FREE_REWARD_SELECTION] = {'group_id': group_id}
     elif outcome == "ask_task":
-        await update.message.reply_text("You have won the right to ask a simple task from any of the other boys. Who would you like to ask? (Please provide their @username)")
+        msg_lines = ["You have won the right to ask a simple task from any of the other boys. Who would you like to ask? (Please provide their @username)"]
         context.user_data[ASK_TASK_TARGET] = {'group_id': group_id}
+        parse_mode = None
+
+    # Add the plays left message at the end, unless it's a prompt for another action
+    if outcome not in ["free_reward", "ask_task"]:
+        msg_lines.append(f"\n(You have {plays_left} {'play' if plays_left == 1 else 'plays'} left today)")
+
+    await update.message.reply_text("\n".join(msg_lines), parse_mode=parse_mode)
 
 @command_handler_wrapper(admin_only=True)
 async def cleangames_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
