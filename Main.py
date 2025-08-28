@@ -385,7 +385,9 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 5. Update the stored data
         for admin_id in added_ids:
-            stored_admins.setdefault(admin_id, []).append(chat_id_str)
+            # Ensure the group is not already listed for this admin
+            if chat_id_str not in stored_admins.setdefault(admin_id, []):
+                stored_admins[admin_id].append(chat_id_str)
 
         for admin_id in removed_ids:
             if admin_id in stored_admins and chat_id_str in stored_admins[admin_id]:
@@ -2186,6 +2188,90 @@ async def cleangames_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await save_games_data_async(games_to_keep)
         await update.message.reply_text("Cleaned up completed games.")
 
+
+@command_handler_wrapper(admin_only=True)
+async def cleandata_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /cleandata (owner only): Scans and cleans the admins.json file.
+    - Removes duplicate group entries for each admin.
+    - Validates each group ID and removes any that are invalid or inaccessible.
+    """
+    if not is_owner(update.effective_user.id):
+        await update.message.reply_text("This is an owner-only command.")
+        return
+
+    await update.message.reply_text("Starting admin data cleanup... This may take a moment.")
+
+    admin_data = load_admin_data()
+    admins = admin_data.get('admins', {})
+    if not admins:
+        await update.message.reply_text("No admin data to clean.")
+        return
+
+    cleaned_count = 0
+    invalid_count = 0
+    original_total_entries = 0
+    processed_groups = set()
+
+    # Create a list of all group IDs to check to avoid repeated API calls
+    all_groups = set()
+    for groups in admins.values():
+        all_groups.update(groups)
+
+    valid_group_cache = {}
+
+    progress_message = await update.message.reply_text(f"Validating {len(all_groups)} unique group IDs...")
+
+    for i, group_id in enumerate(all_groups):
+        try:
+            await context.bot.get_chat(chat_id=group_id)
+            valid_group_cache[group_id] = True
+        except Exception:
+            valid_group_cache[group_id] = False
+
+        if (i + 1) % 10 == 0: # Update progress every 10 groups
+            try:
+                await progress_message.edit_text(f"Validating group {i+1}/{len(all_groups)}...")
+            except Exception: # Ignore if message is deleted or fails to edit
+                pass
+
+    await progress_message.edit_text("Validation complete. Cleaning data...")
+
+    for admin_id, groups in list(admins.items()):
+        original_total_entries += len(groups)
+
+        # 1. Remove duplicates
+        unique_groups = list(dict.fromkeys(groups))
+        if len(unique_groups) < len(groups):
+            cleaned_count += len(groups) - len(unique_groups)
+
+        # 2. Filter using the cache
+        valid_groups = [gid for gid in unique_groups if valid_group_cache.get(gid, False)]
+
+        invalid_count += len(unique_groups) - len(valid_groups)
+
+        if valid_groups:
+            admins[admin_id] = valid_groups
+        else:
+            # If an admin has no valid groups left, remove them
+            del admins[admin_id]
+
+    save_admin_data(admin_data)
+
+    final_total_entries = sum(len(g) for g in admins.values())
+
+    response = (
+        f"✅ <b>Admin Data Cleanup Complete!</b>\n\n"
+        f"<b>Summary:</b>\n"
+        f"Original group entries: {original_total_entries}\n"
+        f"Duplicate entries removed: {cleaned_count}\n"
+        f"Invalid/inaccessible groups removed: {invalid_count}\n"
+        f"Final valid group entries: {final_total_entries}\n\n"
+        f"Your <code>admins.json</code> file is now clean."
+    )
+    await progress_message.edit_text(response, parse_mode='HTML')
+
+
 @command_handler_wrapper(admin_only=True)
 async def punishment_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -2356,7 +2442,7 @@ COMMAND_MAP = {
     'command': {'is_admin': False}, 'disable': {'is_admin': True}, 'enable': {'is_admin': True}, 'addreward': {'is_admin': True},
     'removereward': {'is_admin': True}, 'addpunishment': {'is_admin': True},
     'removepunishment': {'is_admin': True}, 'punishment': {'is_admin': True},
-    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True},
+    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True}, 'cleandata': {'is_admin': True},
     'chance': {'is_admin': False}, 'reward': {'is_admin': False}, 'cancel': {'is_admin': False},
     'addpoints': {'is_admin': True}, 'removepoints': {'is_admin': True},
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
@@ -3340,6 +3426,7 @@ if __name__ == '__main__':
     add_command(app, 'newgame', newgame_command)
     add_command(app, 'loser', loser_command)
     add_command(app, 'cleangames', cleangames_command)
+    add_command(app, 'cleandata', cleandata_command)
     add_command(app, 'chance', chance_command)
     add_command(app, 'reward', reward_command)
     add_command(app, 'cancel', cancel_command)
