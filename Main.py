@@ -1156,6 +1156,37 @@ def generate_bs_board_text(board: list, show_ships: bool = True) -> str:
         board_text += f"{row_num} {row_str}\n"
     return board_text
 
+async def handle_challenge_timeout(context: ContextTypes.DEFAULT_TYPE, game_id: str):
+    """Handles auto-cancellation of a challenge due to timeout. The challenger's stake is NOT lost."""
+    games_data = await load_games_data_async()
+    if game_id not in games_data:
+        return
+    game = games_data[game_id]
+
+    # Only act on games that are actually pending acceptance to avoid race conditions
+    if game.get('status') != 'pending_opponent_acceptance':
+        return
+
+    challenger_id = game['challenger_id']
+    opponent_id = game['opponent_id']
+
+    challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
+    opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+
+    await context.bot.send_message(
+        game['group_id'],
+        f"The challenge from {challenger_name} to {opponent_name} expired due to inactivity and has been cancelled. No stakes were lost.",
+        parse_mode='HTML'
+    )
+
+    # Clean up the game by marking it as complete and deleting tracked messages
+    game['status'] = 'complete'
+    await save_games_data_async(games_data)
+    await delete_tracked_messages(context, game_id)
+
+
 async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Handles cancellation of a game due to inactivity, both players lose."""
     games_data = await load_games_data_async()
@@ -1224,6 +1255,12 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
             continue
 
         last_activity = game.get('last_activity', 0)
+
+        # Special 2-minute (120s) timeout for pending opponent acceptance
+        if game.get('status') == 'pending_opponent_acceptance' and (now - last_activity > 120):
+            logger.info(f"Game {game_id} timed out at acceptance stage. Cancelling without penalty.")
+            await handle_challenge_timeout(context, game_id)
+            continue # Game is handled, move to the next one
 
         # 7 minutes timeout -> cancel
         if now - last_activity > 420:
@@ -2006,6 +2043,10 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You cannot challenge yourself.")
         return
 
+    if opponent_user.id == context.bot.id:
+        await update.message.reply_text("You cannot challenge me, I'm just the referee!")
+        return
+
     games_data = await load_games_data_async()
     group_id = update.effective_chat.id
     for game in games_data.values():
@@ -2099,6 +2140,45 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Announce the loser and handle stakes/deletion via the centralized function
     await handle_game_over(context, latest_game_id, winner_id, int(loser_id))
+
+@command_handler_wrapper(admin_only=True)
+async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /stopgame - (Admin only) Manually stops the current game in the group. """
+    if update.effective_chat.type not in ['group', 'supergroup']:
+        await update.message.reply_text("This command can only be used in a group.")
+        return
+
+    group_id = update.effective_chat.id
+    games_data = await load_games_data_async()
+
+    active_game_id = None
+    for game_id, game in games_data.items():
+        if game.get('group_id') == group_id and game.get('status') != 'complete':
+            active_game_id = game_id
+            break
+
+    if not active_game_id:
+        await update.message.reply_text("There is no active game in this group to stop.")
+        return
+
+    game = games_data[active_game_id]
+    challenger_id = game['challenger_id']
+    opponent_id = game['opponent_id']
+    challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
+    opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+
+    await context.bot.send_message(
+        game['group_id'],
+        f"The game between {challenger_name} and {opponent_name} has been manually stopped by an admin. No stakes were lost.",
+        parse_mode='HTML'
+    )
+
+    # Clean up the game
+    game['status'] = 'complete'
+    await save_games_data_async(games_data)
+    await delete_tracked_messages(context, active_game_id)
 
 from datetime import datetime
 
@@ -2356,7 +2436,7 @@ COMMAND_MAP = {
     'command': {'is_admin': False}, 'disable': {'is_admin': True}, 'enable': {'is_admin': True}, 'addreward': {'is_admin': True},
     'removereward': {'is_admin': True}, 'addpunishment': {'is_admin': True},
     'removepunishment': {'is_admin': True}, 'punishment': {'is_admin': True},
-    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True},
+    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True}, 'stopgame': {'is_admin': True},
     'chance': {'is_admin': False}, 'reward': {'is_admin': False}, 'cancel': {'is_admin': False},
     'addpoints': {'is_admin': True}, 'removepoints': {'is_admin': True},
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
@@ -3339,6 +3419,7 @@ if __name__ == '__main__':
     add_command(app, 'punishment', punishment_command)
     add_command(app, 'newgame', newgame_command)
     add_command(app, 'loser', loser_command)
+    add_command(app, 'stopgame', stopgame_command)
     add_command(app, 'cleangames', cleangames_command)
     add_command(app, 'chance', chance_command)
     add_command(app, 'reward', reward_command)
