@@ -1015,28 +1015,40 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     # Handle challenger's stake
     if challenger_stake:
         if challenger_stake['type'] == 'points':
-            await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
+            points_val = challenger_stake['value']
+            await add_user_points(game['group_id'], challenger_id, -points_val, context)
+            await context.bot.send_message(
+                game['group_id'],
+                f"{challenger_name} lost {points_val} points in the draw.",
+                parse_mode='HTML'
+            )
         else: # media
             caption = f"This was {challenger_name}'s stake from the drawn game."
             if challenger_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption)
+                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
             elif challenger_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption)
+                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
             elif challenger_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption)
+                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
 
     # Handle opponent's stake
     if opponent_stake:
         if opponent_stake['type'] == 'points':
-            await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
+            points_val = opponent_stake['value']
+            await add_user_points(game['group_id'], opponent_id, -points_val, context)
+            await context.bot.send_message(
+                game['group_id'],
+                f"{opponent_name} lost {points_val} points in the draw.",
+                parse_mode='HTML'
+            )
         else: # media
             caption = f"This was {opponent_name}'s stake from the drawn game."
             if opponent_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption)
+                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
             elif opponent_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption)
+                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
             elif opponent_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption)
+                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
