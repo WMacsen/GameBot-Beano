@@ -2190,6 +2190,205 @@ async def cleangames_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Cleaned up completed games.")
 
 
+async def risk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    /risk (private chat only): Starts the risk game.
+    """
+    if update.effective_chat.type != "private":
+        await update.message.reply_text("The /risk command can only be used in a private chat with me.")
+        return ConversationHandler.END
+
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("You must be an admin in at least one group to use the /risk command.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Starting the /risk game! Please send me the media (photo, video, or voice note) you want to risk.")
+    return RISK_AWAITING_MEDIA
+
+
+async def risk_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the media submission for the /risk command."""
+    message = update.message
+    file_id = None
+    media_type = None
+
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        media_type = 'photo'
+    elif message.video:
+        file_id = message.video.file_id
+        media_type = 'video'
+    elif message.voice:
+        file_id = message.voice.file_id
+        media_type = 'voice'
+    else:
+        await message.reply_text("That's not a valid media file. Please send a photo, video, or voice note, or type /cancel to stop.")
+        return RISK_AWAITING_MEDIA
+
+    context.user_data['risk_file_id'] = file_id
+    context.user_data['risk_media_type'] = media_type
+
+    user_id = str(update.effective_user.id)
+    admin_data = load_admin_data()
+    user_groups = admin_data.get('admins', {}).get(user_id, [])
+
+    if not user_groups:
+        await message.reply_text("I couldn't find any groups you are an admin of. The /risk command is cancelled.")
+        return ConversationHandler.END
+
+    # De-duplicate and validate groups
+    unique_groups = list(dict.fromkeys(user_groups))
+
+    keyboard = []
+    valid_groups_found = 0
+    for group_id in unique_groups:
+        try:
+            chat = await context.bot.get_chat(chat_id=group_id)
+            keyboard.append([InlineKeyboardButton(chat.title, callback_data=f"risk_group:{group_id}")])
+            valid_groups_found += 1
+        except Exception:
+            logger.warning(f"Could not fetch info for group {group_id} during /risk command for user {user_id}. Skipping.")
+            continue
+
+    if valid_groups_found == 0:
+        await message.reply_text("I couldn't find any valid groups that you are an admin of. The /risk command is cancelled.")
+        return ConversationHandler.END
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await message.reply_text("Thank you. Now, please select the group you want to risk this media in:", reply_markup=reply_markup)
+
+    return RISK_AWAITING_GROUP_SELECTION
+
+
+async def risk_group_selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the user's selection of a group for the /risk command."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        _, group_id = query.data.split(':')
+    except ValueError:
+        await query.edit_message_text("Invalid selection. Cancelling /risk command.")
+        return ConversationHandler.END
+
+    context.user_data['risk_group_id'] = group_id
+
+    try:
+        chat = await context.bot.get_chat(chat_id=group_id)
+        group_name = chat.title
+    except Exception:
+        await query.edit_message_text("The group you selected seems to be invalid or I can no longer access it. Cancelling /risk command.")
+        return ConversationHandler.END
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Confirm", callback_data="risk_confirm"),
+            InlineKeyboardButton("❌ Cancel", callback_data="risk_cancel")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        f"You are about to risk your media in the group: <b>{html.escape(group_name)}</b>.\n\n"
+        "If you fail, it will be posted for all to see. Are you sure?",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+    return RISK_AWAITING_CONFIRMATION
+
+
+async def risk_confirmation_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the final confirmation and the core risk/success logic."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "risk_cancel":
+        await query.edit_message_text("Risk cancelled. You are safe... for now.")
+        return ConversationHandler.END
+
+    # --- Risk Logic ---
+    if random.random() < 0.5: # 50% chance of failure
+        # FAILURE PATH
+        user_id = update.effective_user.id
+        user_mention = get_display_name(user_id, update.effective_user.full_name)
+
+        group_id = context.user_data.get('risk_group_id')
+        file_id = context.user_data.get('risk_file_id')
+        media_type = context.user_data.get('risk_media_type')
+
+        caption = f"{user_mention} tried the fates and failed like the loser it is 😈"
+
+        try:
+            if media_type == 'photo':
+                await context.bot.send_photo(chat_id=group_id, photo=file_id, caption=caption, parse_mode='HTML')
+            elif media_type == 'video':
+                await context.bot.send_video(chat_id=group_id, video=file_id, caption=caption, parse_mode='HTML')
+            elif media_type == 'voice':
+                await context.bot.send_voice(chat_id=group_id, voice=file_id, caption=caption, parse_mode='HTML')
+
+            await query.edit_message_text("You failed! Your media has been posted. Better luck next time.")
+        except Exception as e:
+            logger.error(f"Failed to post risk media for user {user_id} to group {group_id}: {e}")
+            await query.edit_message_text("I failed to post your media to the group due to an error. You got lucky this time.")
+
+        return ConversationHandler.END
+    else:
+        # SUCCESS PATH
+        keyboard = [
+            [InlineKeyboardButton("Post me anyway please 🙏", callback_data="risk_post_anyway")],
+            [InlineKeyboardButton("Thanks sir!", callback_data="risk_thank_sir")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            "You are safe... for the time being.",
+            reply_markup=reply_markup
+        )
+        return RISK_AWAITING_SUCCESS_CHOICE
+
+
+async def risk_success_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the user's choice after a successful /risk roll."""
+    query = update.callback_query
+    await query.answer()
+
+    choice = query.data
+
+    if choice == "risk_thank_sir":
+        await query.edit_message_text("You're welcome. Stay safe.")
+        return ConversationHandler.END
+
+    if choice == "risk_post_anyway":
+        user_id = update.effective_user.id
+        user_mention = get_display_name(user_id, update.effective_user.full_name)
+
+        group_id = context.user_data.get('risk_group_id')
+        file_id = context.user_data.get('risk_file_id')
+        media_type = context.user_data.get('risk_media_type')
+
+        caption = f"{user_mention} begged me to be exposed without mercy... So lets give it what it wants 😈"
+
+        try:
+            if media_type == 'photo':
+                await context.bot.send_photo(chat_id=group_id, photo=file_id, caption=caption, parse_mode='HTML')
+            elif media_type == 'video':
+                await context.bot.send_video(chat_id=group_id, video=file_id, caption=caption, parse_mode='HTML')
+            elif media_type == 'voice':
+                await context.bot.send_voice(chat_id=group_id, voice=file_id, caption=caption, parse_mode='HTML')
+
+            await query.edit_message_text("As you wish. You have been exposed.")
+        except Exception as e:
+            logger.error(f"Failed to post 'anyway' risk media for user {user_id} to group {group_id}: {e}")
+            await query.edit_message_text("I failed to post your media to the group due to an error. It seems the fates want you to remain safe.")
+
+        return ConversationHandler.END
+
+    # Fallback for any unexpected callback data
+    await query.edit_message_text("Invalid choice. Cancelling conversation.")
+    return ConversationHandler.END
+
+
 @command_handler_wrapper(admin_only=True)
 async def cleandata_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -2449,7 +2648,7 @@ COMMAND_MAP = {
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
     'title': {'is_admin': True}, 'removetitle': {'is_admin': True},
     'update': {'is_admin': True}, 'viewstakes': {'is_admin': True},
-    'game': {'is_admin': False},
+    'game': {'is_admin': False}, 'risk': {'is_admin': False},
 }
 
 @command_handler_wrapper(admin_only=False)
@@ -2678,6 +2877,7 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif topic == 'help_games':
         text = """
 <b>Game Commands</b>
+- /risk (private chat only): Risk sending a media file to a group you admin. There's a chance it will be posted with an embarrassing caption!
 - /newgame (reply to user): Challenge someone to a game of Dice, Connect Four, Battleship, or Tic-Tac-Toe.
 - /chance: Play a daily game of chance for points or other outcomes.
         """
@@ -2755,6 +2955,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # Game Setup Conversation
 # =============================
 GAME_SELECTION, ROUND_SELECTION, STAKE_TYPE_SELECTION, STAKE_SUBMISSION_POINTS, STAKE_SUBMISSION_MEDIA, OPPONENT_SELECTION, CONFIRMATION, FREE_REWARD_SELECTION, ASK_TASK_TARGET, ASK_TASK_DESCRIPTION = range(10)
+RISK_AWAITING_MEDIA, RISK_AWAITING_GROUP_SELECTION, RISK_AWAITING_CONFIRMATION, RISK_AWAITING_SUCCESS_CHOICE = range(10, 14)
 
 async def start_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the game setup conversation."""
@@ -3475,6 +3676,20 @@ if __name__ == '__main__':
         conversation_timeout=600  # 10 minutes to place all ships
     )
     app.add_handler(battleship_placement_handler)
+
+    # Risk command conversation handler
+    risk_handler = ConversationHandler(
+        entry_points=[CommandHandler('risk', risk_command)],
+        states={
+            RISK_AWAITING_MEDIA: [MessageHandler(filters.ATTACHMENT, risk_media_handler)],
+            RISK_AWAITING_GROUP_SELECTION: [CallbackQueryHandler(risk_group_selection_handler, pattern=r'^risk_group:.*')],
+            RISK_AWAITING_CONFIRMATION: [CallbackQueryHandler(risk_confirmation_handler, pattern=r'^risk_(confirm|cancel)$')],
+            RISK_AWAITING_SUCCESS_CHOICE: [CallbackQueryHandler(risk_success_choice_handler, pattern=r'^risk_(post_anyway|thank_sir)$')],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_game_setup)], # Re-use the generic cancel handler
+        conversation_timeout=600 # 10 minute timeout for the whole conversation
+    )
+    app.add_handler(risk_handler)
 
     app.add_handler(game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
