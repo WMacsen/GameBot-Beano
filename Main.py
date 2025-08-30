@@ -535,7 +535,7 @@ def set_user_points(group_id, user_id, points):
     save_points_data(data)
     logger.debug(f"Set points for user {user_id} in group {group_id} to {points}")
 
-async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_TYPE):
+async def check_for_punishment(group_id, user_id, old_points, new_points, context: ContextTypes.DEFAULT_TYPE):
     punishments_data = load_punishments_data()
     group_id_str = str(group_id)
 
@@ -543,7 +543,6 @@ async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_
         return
 
     group_punishments = punishments_data[group_id_str]
-    user_points = get_user_points(group_id, user_id)
     triggered_punishments = get_triggered_punishments_for_user(group_id, user_id)
 
     for punishment in group_punishments:
@@ -553,7 +552,8 @@ async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_
         if threshold is None or message is None:
             continue
 
-        if user_points < threshold:
+        # Condition 1: User's points just crossed BELOW the threshold
+        if old_points >= threshold and new_points < threshold:
             if message not in triggered_punishments:
                 # Punish the user
                 user_member = await context.bot.get_chat_member(group_id, user_id)
@@ -570,24 +570,28 @@ async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_
                     try:
                         await context.bot.send_message(
                             chat_id=admin.user.id,
-                            text=f"User {display_name} (ID: {user_id}) in group {chat.title} (ID: {group_id}) triggered punishment '{message}' by falling below {threshold} points."
+                            text=f"User {display_name} (ID: {user_id}) in group {chat.title} (ID: {group_id}) triggered punishment '{message}' by falling below {threshold} points.",
+                            parse_mode='HTML'
                         )
                     except Exception:
                         logger.warning(f"Failed to notify admin {admin.user.id} about punishment.")
 
                 add_triggered_punishment_for_user(group_id, user_id, message)
-        else:
-            # If user is above threshold, reset their status for this punishment
+
+        # Condition 2: User's points are now at or above the threshold, so they are eligible again
+        elif new_points >= threshold:
             if message in triggered_punishments:
                 remove_triggered_punishment_for_user(group_id, user_id, message)
+                logger.info(f"User {user_id} is now above threshold {threshold}, punishment '{message}' can be triggered again.")
 
 async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAULT_TYPE):
-    points = get_user_points(group_id, user_id) + delta
-    set_user_points(group_id, user_id, points)
-    logger.debug(f"Added {delta} points for user {user_id} in group {group_id} (new total: {points})")
+    old_points = get_user_points(group_id, user_id)
+    new_points = old_points + delta
+    set_user_points(group_id, user_id, new_points)
+    logger.debug(f"Added {delta} points for user {user_id} in group {group_id} (new total: {new_points})")
 
     # If user's points are non-negative, reset their negative strike counter for this group.
-    if points >= 0:
+    if new_points >= 0:
         tracker = load_negative_tracker()
         group_id_str = str(group_id)
         user_id_str = str(user_id)
@@ -598,8 +602,8 @@ async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAUL
                 logger.debug(f"Reset negative points tracker for user {user_id_str} in group {group_id_str}.")
 
     # Run all punishment checks
-    await check_for_punishment(group_id, user_id, context)
-    await check_for_negative_points(group_id, user_id, points, context)
+    await check_for_punishment(group_id, user_id, old_points, new_points, context)
+    await check_for_negative_points(group_id, user_id, new_points, context)
 
 # =============================
 # Negative Points Tracker
