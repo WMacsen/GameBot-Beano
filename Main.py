@@ -3387,6 +3387,27 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text("Challenge refused.")
 
 # =============================
+# Unknown Command Handler
+# =============================
+async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles any message that looks like a command but is not registered.
+    This is a catch-all to prevent the bot from replying to unknown commands,
+    especially those intended for other bots in a group.
+    """
+    # In groups, bots often see commands for other bots. We should ignore them.
+    if update.message and (update.message.text.startswith('/') or update.message.text.startswith('.') or update.message.text.startswith('!')):
+        # Basic check: if a command includes '@' but not our bot's name, ignore it.
+        if '@' in update.message.text and BOT_USERNAME.lstrip('@') not in update.message.text:
+            logger.info(f"Ignoring command intended for another bot: {update.message.text}")
+            return
+
+        # Otherwise, it might be a command for us that we don't recognize.
+        # We will just silently ignore it to prevent noise.
+        logger.info(f"Ignoring unknown command: {update.message.text}")
+
+
+# =============================
 # Command Registration Helper
 # =============================
 def add_command(app: Application, command: str, handler):
@@ -3396,15 +3417,31 @@ def add_command(app: Application, command: str, handler):
     # Wrapper for MessageHandlers to populate context.args
     async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message and update.message.text:
-            context.args = update.message.text.split()[1:]
+            # Reconstruct the command without the prefix and bot name for arg parsing
+            text = update.message.text
+            if text.startswith('.') or text.startswith('!'):
+                parts = text.split()
+                # Basic split, assumes command is the first part
+                context.args = parts[1:]
+            else:
+                context.args = update.message.text.split()[1:]
+
         await handler(update, context)
 
+    # The bot's username without the '@'
+    bot_username_without_at = BOT_USERNAME.lstrip('@')
+
     # Register for /<command> - uses the original handler as it populates args automatically
+    # CommandHandler is smart enough to handle /command@botname
     app.add_handler(CommandHandler(command, handler))
 
-    # Register for .<command> and !<command> - uses the wrapper
-    app.add_handler(MessageHandler(filters.Regex(rf'^\.{command}(\s|$)'), message_handler_wrapper))
-    app.add_handler(MessageHandler(filters.Regex(rf'^!{command}(\s|$)'), message_handler_wrapper))
+    # Register for .<command> and !<command> - uses the wrapper with improved regex
+    # This regex now optionally matches @botname
+    dot_regex = rf'^\.{command}(?:@{bot_username_without_at})?(\s|$)'
+    app.add_handler(MessageHandler(filters.Regex(dot_regex), message_handler_wrapper))
+
+    bang_regex = rf'^!{command}(?:@{bot_username_without_at})?(\s|$)'
+    app.add_handler(MessageHandler(filters.Regex(bang_regex), message_handler_wrapper))
 
 
 async def post_init(application: Application) -> None:
@@ -3452,6 +3489,9 @@ if __name__ == '__main__':
 
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
+
+    # Add the unknown command handler with a low priority to catch anything not handled yet
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler), group=1)
 
     game_setup_handler = ConversationHandler(
         entry_points=[
