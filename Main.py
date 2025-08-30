@@ -1806,7 +1806,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         rewards = get_rewards_list(group_id)
         reward = next((r for r in rewards if r['name'].lower() == choice.lower()), None)
         if not reward:
-            await update.message.reply_text("That reward does not exist. Please reply with a valid reward name or type /cancel.")
+            await update.message.reply_text("That reward does not exist. The reward selection process has been cancelled. Please start over with /reward if you wish to try again.")
+            context.user_data.pop(REWARD_STATE, None)
             return
         if reward['name'].lower() == 'other':
             display_name = get_display_name(user_id, update.effective_user.full_name)
@@ -1892,7 +1893,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         reward = next((r for r in rewards if r['name'].lower() == choice.lower()), None)
 
         if not reward:
-            await update.message.reply_text("That reward does not exist. Please reply with a valid reward name.")
+            await update.message.reply_text("That reward does not exist. The reward selection process has been cancelled. Please try the /chance command again later.")
+            context.user_data.pop(FREE_REWARD_SELECTION, None)
             return
 
         display_name = get_display_name(user_id, update.effective_user.full_name)
