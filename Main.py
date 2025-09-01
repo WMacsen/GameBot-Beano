@@ -535,7 +535,7 @@ def set_user_points(group_id, user_id, points):
     save_points_data(data)
     logger.debug(f"Set points for user {user_id} in group {group_id} to {points}")
 
-async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_TYPE):
+async def check_for_punishment(group_id, user_id, old_points, new_points, context: ContextTypes.DEFAULT_TYPE):
     punishments_data = load_punishments_data()
     group_id_str = str(group_id)
 
@@ -543,7 +543,6 @@ async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_
         return
 
     group_punishments = punishments_data[group_id_str]
-    user_points = get_user_points(group_id, user_id)
     triggered_punishments = get_triggered_punishments_for_user(group_id, user_id)
 
     for punishment in group_punishments:
@@ -553,7 +552,8 @@ async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_
         if threshold is None or message is None:
             continue
 
-        if user_points < threshold:
+        # Condition 1: User's points just crossed BELOW the threshold
+        if old_points >= threshold and new_points < threshold:
             if message not in triggered_punishments:
                 # Punish the user
                 user_member = await context.bot.get_chat_member(group_id, user_id)
@@ -570,24 +570,28 @@ async def check_for_punishment(group_id, user_id, context: ContextTypes.DEFAULT_
                     try:
                         await context.bot.send_message(
                             chat_id=admin.user.id,
-                            text=f"User {display_name} (ID: {user_id}) in group {chat.title} (ID: {group_id}) triggered punishment '{message}' by falling below {threshold} points."
+                            text=f"User {display_name} (ID: {user_id}) in group {chat.title} (ID: {group_id}) triggered punishment '{message}' by falling below {threshold} points.",
+                            parse_mode='HTML'
                         )
                     except Exception:
                         logger.warning(f"Failed to notify admin {admin.user.id} about punishment.")
 
                 add_triggered_punishment_for_user(group_id, user_id, message)
-        else:
-            # If user is above threshold, reset their status for this punishment
+
+        # Condition 2: User's points are now at or above the threshold, so they are eligible again
+        elif new_points >= threshold:
             if message in triggered_punishments:
                 remove_triggered_punishment_for_user(group_id, user_id, message)
+                logger.info(f"User {user_id} is now above threshold {threshold}, punishment '{message}' can be triggered again.")
 
 async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAULT_TYPE):
-    points = get_user_points(group_id, user_id) + delta
-    set_user_points(group_id, user_id, points)
-    logger.debug(f"Added {delta} points for user {user_id} in group {group_id} (new total: {points})")
+    old_points = get_user_points(group_id, user_id)
+    new_points = old_points + delta
+    set_user_points(group_id, user_id, new_points)
+    logger.debug(f"Added {delta} points for user {user_id} in group {group_id} (new total: {new_points})")
 
     # If user's points are non-negative, reset their negative strike counter for this group.
-    if points >= 0:
+    if new_points >= 0:
         tracker = load_negative_tracker()
         group_id_str = str(group_id)
         user_id_str = str(user_id)
@@ -598,8 +602,8 @@ async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAUL
                 logger.debug(f"Reset negative points tracker for user {user_id_str} in group {group_id_str}.")
 
     # Run all punishment checks
-    await check_for_punishment(group_id, user_id, context)
-    await check_for_negative_points(group_id, user_id, points, context)
+    await check_for_punishment(group_id, user_id, old_points, new_points, context)
+    await check_for_negative_points(group_id, user_id, new_points, context)
 
 # =============================
 # Negative Points Tracker
@@ -1015,28 +1019,40 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     # Handle challenger's stake
     if challenger_stake:
         if challenger_stake['type'] == 'points':
-            await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
+            points_val = challenger_stake['value']
+            await add_user_points(game['group_id'], challenger_id, -points_val, context)
+            await context.bot.send_message(
+                game['group_id'],
+                f"{challenger_name} lost {points_val} points in the draw.",
+                parse_mode='HTML'
+            )
         else: # media
             caption = f"This was {challenger_name}'s stake from the drawn game."
             if challenger_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption)
+                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
             elif challenger_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption)
+                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
             elif challenger_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption)
+                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
 
     # Handle opponent's stake
     if opponent_stake:
         if opponent_stake['type'] == 'points':
-            await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
+            points_val = opponent_stake['value']
+            await add_user_points(game['group_id'], opponent_id, -points_val, context)
+            await context.bot.send_message(
+                game['group_id'],
+                f"{opponent_name} lost {points_val} points in the draw.",
+                parse_mode='HTML'
+            )
         else: # media
             caption = f"This was {opponent_name}'s stake from the drawn game."
             if opponent_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption)
+                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
             elif opponent_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption)
+                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
             elif opponent_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption)
+                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -1156,6 +1172,37 @@ def generate_bs_board_text(board: list, show_ships: bool = True) -> str:
         board_text += f"{row_num} {row_str}\n"
     return board_text
 
+async def handle_challenge_timeout(context: ContextTypes.DEFAULT_TYPE, game_id: str):
+    """Handles auto-cancellation of a challenge due to timeout. The challenger's stake is NOT lost."""
+    games_data = await load_games_data_async()
+    if game_id not in games_data:
+        return
+    game = games_data[game_id]
+
+    # Only act on games that are actually pending acceptance to avoid race conditions
+    if game.get('status') != 'pending_opponent_acceptance':
+        return
+
+    challenger_id = game['challenger_id']
+    opponent_id = game['opponent_id']
+
+    challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
+    opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+
+    await context.bot.send_message(
+        game['group_id'],
+        f"The challenge from {challenger_name} to {opponent_name} expired due to inactivity and has been cancelled. No stakes were lost.",
+        parse_mode='HTML'
+    )
+
+    # Clean up the game by marking it as complete and deleting tracked messages
+    game['status'] = 'complete'
+    await save_games_data_async(games_data)
+    await delete_tracked_messages(context, game_id)
+
+
 async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Handles cancellation of a game due to inactivity, both players lose."""
     games_data = await load_games_data_async()
@@ -1224,6 +1271,12 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
             continue
 
         last_activity = game.get('last_activity', 0)
+
+        # Special 2-minute (120s) timeout for pending opponent acceptance
+        if game.get('status') == 'pending_opponent_acceptance' and (now - last_activity > 120):
+            logger.info(f"Game {game_id} timed out at acceptance stage. Cancelling without penalty.")
+            await handle_challenge_timeout(context, game_id)
+            continue # Game is handled, move to the next one
 
         # 7 minutes timeout -> cancel
         if now - last_activity > 420:
@@ -1757,7 +1810,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         rewards = get_rewards_list(group_id)
         reward = next((r for r in rewards if r['name'].lower() == choice.lower()), None)
         if not reward:
-            await update.message.reply_text("That reward does not exist. Please reply with a valid reward name or type /cancel.")
+            await update.message.reply_text("That reward does not exist. The reward selection process has been cancelled. Please start over with /reward if you wish to try again.")
+            context.user_data.pop(REWARD_STATE, None)
             return
         if reward['name'].lower() == 'other':
             display_name = get_display_name(user_id, update.effective_user.full_name)
@@ -1843,7 +1897,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         reward = next((r for r in rewards if r['name'].lower() == choice.lower()), None)
 
         if not reward:
-            await update.message.reply_text("That reward does not exist. Please reply with a valid reward name.")
+            await update.message.reply_text("That reward does not exist. The reward selection process has been cancelled. Please try the /chance command again later.")
+            context.user_data.pop(FREE_REWARD_SELECTION, None)
             return
 
         display_name = get_display_name(user_id, update.effective_user.full_name)
@@ -2006,6 +2061,10 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You cannot challenge yourself.")
         return
 
+    if opponent_user.id == context.bot.id:
+        await update.message.reply_text("You cannot challenge me, I'm just the referee!")
+        return
+
     games_data = await load_games_data_async()
     group_id = update.effective_chat.id
     for game in games_data.values():
@@ -2099,6 +2158,45 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Announce the loser and handle stakes/deletion via the centralized function
     await handle_game_over(context, latest_game_id, winner_id, int(loser_id))
+
+@command_handler_wrapper(admin_only=True)
+async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /stopgame - (Admin only) Manually stops the current game in the group. """
+    if update.effective_chat.type not in ['group', 'supergroup']:
+        await update.message.reply_text("This command can only be used in a group.")
+        return
+
+    group_id = update.effective_chat.id
+    games_data = await load_games_data_async()
+
+    active_game_id = None
+    for game_id, game in games_data.items():
+        if game.get('group_id') == group_id and game.get('status') != 'complete':
+            active_game_id = game_id
+            break
+
+    if not active_game_id:
+        await update.message.reply_text("There is no active game in this group to stop.")
+        return
+
+    game = games_data[active_game_id]
+    challenger_id = game['challenger_id']
+    opponent_id = game['opponent_id']
+    challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
+    opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+
+    await context.bot.send_message(
+        game['group_id'],
+        f"The game between {challenger_name} and {opponent_name} has been manually stopped by an admin. No stakes were lost.",
+        parse_mode='HTML'
+    )
+
+    # Clean up the game
+    game['status'] = 'complete'
+    await save_games_data_async(games_data)
+    await delete_tracked_messages(context, active_game_id)
 
 from datetime import datetime
 
@@ -2356,7 +2454,7 @@ COMMAND_MAP = {
     'command': {'is_admin': False}, 'disable': {'is_admin': True}, 'enable': {'is_admin': True}, 'addreward': {'is_admin': True},
     'removereward': {'is_admin': True}, 'addpunishment': {'is_admin': True},
     'removepunishment': {'is_admin': True}, 'punishment': {'is_admin': True},
-    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True},
+    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True}, 'stopgame': {'is_admin': True},
     'chance': {'is_admin': False}, 'reward': {'is_admin': False}, 'cancel': {'is_admin': False},
     'addpoints': {'is_admin': True}, 'removepoints': {'is_admin': True},
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
@@ -3110,39 +3208,36 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games_data = await load_games_data_async()
 
     active_game_id = None
-    active_game = None
     for game_id, game in games_data.items():
         if game.get('game_type') == 'dice' and \
            game.get('status') == 'active' and \
            (game.get('challenger_id') == user_id or game.get('opponent_id') == user_id):
             active_game_id = game_id
-            active_game = game
             break
 
-    if not active_game:
+    if not active_game_id:
         return
+
+    # Get a direct reference to the game object from the loaded data
+    active_game = games_data[active_game_id]
 
     await update_game_activity(active_game_id)
 
     # Track the user's dice message for deletion
-    games_data = await load_games_data_async()
-    game = games_data[active_game_id]
-    game.setdefault('messages_to_delete', []).append({
+    active_game.setdefault('messages_to_delete', []).append({
         'chat_id': update.effective_chat.id,
         'message_id': update.message.message_id
     })
-    await save_games_data_async(games_data)
 
-    # This is a lot of logic for one function. I will break it down in the future if needed.
     last_roll = active_game.get('last_roll')
 
     if not last_roll: # First roll of a round
         active_game['last_roll'] = {'user_id': user_id, 'value': update.message.dice.value}
-        await save_games_data_async(games_data)
         other_player_id = active_game['challenger_id'] if user_id == active_game['opponent_id'] else active_game['opponent_id']
         other_player_member = await context.bot.get_chat_member(active_game['group_id'], other_player_id)
         other_player_name = get_display_name(other_player_id, other_player_member.user.full_name)
         await send_and_track_message(context, update.effective_chat.id, active_game_id, f"You rolled a {update.message.dice.value}. Waiting for {other_player_name} to roll.", parse_mode='HTML')
+        await save_games_data_async(games_data) # Save the updated game data
         return
 
     if last_roll['user_id'] == user_id:
@@ -3175,9 +3270,11 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     winner_name = get_display_name(winner_id, winner_member.user.full_name)
     win_message = f"{winner_name} wins round {active_game['current_round']}!\n" \
                   f"Score: {active_game['challenger_score']} - {active_game['opponent_score']}"
-    await context.bot.send_message(
-        chat_id=active_game['group_id'],
-        text=win_message,
+    await send_and_track_message(
+        context,
+        active_game['group_id'],
+        active_game_id,
+        win_message,
         parse_mode='HTML'
     )
 
@@ -3192,17 +3289,21 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             winner_id = active_game['opponent_id']
             loser_id = active_game['challenger_id']
 
+        await save_games_data_async(games_data) # Save final state before game over
         await handle_game_over(context, active_game_id, winner_id, loser_id)
         return
     else:
         # Next round
         active_game['current_round'] += 1
         active_game['last_roll'] = None
-        await save_games_data_async(games_data)
-        await context.bot.send_message(
-            chat_id=active_game['group_id'],
-            text=f"Round {active_game['current_round']}! It's anyone's turn to roll."
+        await send_and_track_message(
+            context,
+            active_game['group_id'],
+            active_game_id,
+            f"Round {active_game['current_round']}! It's anyone's turn to roll."
         )
+
+    await save_games_data_async(games_data)
 
 async def challenge_response_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the opponent's response to a game challenge."""
@@ -3290,6 +3391,27 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text("Challenge refused.")
 
 # =============================
+# Unknown Command Handler
+# =============================
+async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles any message that looks like a command but is not registered.
+    This is a catch-all to prevent the bot from replying to unknown commands,
+    especially those intended for other bots in a group.
+    """
+    # In groups, bots often see commands for other bots. We should ignore them.
+    if update.message and (update.message.text.startswith('/') or update.message.text.startswith('.') or update.message.text.startswith('!')):
+        # Basic check: if a command includes '@' but not our bot's name, ignore it.
+        if '@' in update.message.text and BOT_USERNAME.lstrip('@') not in update.message.text:
+            logger.info(f"Ignoring command intended for another bot: {update.message.text}")
+            return
+
+        # Otherwise, it might be a command for us that we don't recognize.
+        # We will just silently ignore it to prevent noise.
+        logger.info(f"Ignoring unknown command: {update.message.text}")
+
+
+# =============================
 # Command Registration Helper
 # =============================
 def add_command(app: Application, command: str, handler):
@@ -3299,15 +3421,31 @@ def add_command(app: Application, command: str, handler):
     # Wrapper for MessageHandlers to populate context.args
     async def message_handler_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message and update.message.text:
-            context.args = update.message.text.split()[1:]
+            # Reconstruct the command without the prefix and bot name for arg parsing
+            text = update.message.text
+            if text.startswith('.') or text.startswith('!'):
+                parts = text.split()
+                # Basic split, assumes command is the first part
+                context.args = parts[1:]
+            else:
+                context.args = update.message.text.split()[1:]
+
         await handler(update, context)
 
+    # The bot's username without the '@'
+    bot_username_without_at = BOT_USERNAME.lstrip('@')
+
     # Register for /<command> - uses the original handler as it populates args automatically
+    # CommandHandler is smart enough to handle /command@botname
     app.add_handler(CommandHandler(command, handler))
 
-    # Register for .<command> and !<command> - uses the wrapper
-    app.add_handler(MessageHandler(filters.Regex(rf'^\.{command}(\s|$)'), message_handler_wrapper))
-    app.add_handler(MessageHandler(filters.Regex(rf'^!{command}(\s|$)'), message_handler_wrapper))
+    # Register for .<command> and !<command> - uses the wrapper with improved regex
+    # This regex now optionally matches @botname
+    dot_regex = rf'^\.{command}(?:@{bot_username_without_at})?(\s|$)'
+    app.add_handler(MessageHandler(filters.Regex(dot_regex), message_handler_wrapper))
+
+    bang_regex = rf'^!{command}(?:@{bot_username_without_at})?(\s|$)'
+    app.add_handler(MessageHandler(filters.Regex(bang_regex), message_handler_wrapper))
 
 
 async def post_init(application: Application) -> None:
@@ -3339,6 +3477,7 @@ if __name__ == '__main__':
     add_command(app, 'punishment', punishment_command)
     add_command(app, 'newgame', newgame_command)
     add_command(app, 'loser', loser_command)
+    add_command(app, 'stopgame', stopgame_command)
     add_command(app, 'cleangames', cleangames_command)
     add_command(app, 'chance', chance_command)
     add_command(app, 'reward', reward_command)
@@ -3354,6 +3493,9 @@ if __name__ == '__main__':
 
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
+
+    # Add the unknown command handler with a low priority to catch anything not handled yet
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler), group=1)
 
     game_setup_handler = ConversationHandler(
         entry_points=[
