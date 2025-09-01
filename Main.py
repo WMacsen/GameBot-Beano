@@ -1399,9 +1399,28 @@ async def bs_select_col_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # Keyboard to select a row to attack
     row1 = [InlineKeyboardButton(str(i + 1), callback_data=f"bs:attack:{game_id}:{i}:{c}") for i in range(5)]
     row2 = [InlineKeyboardButton(str(i + 1), callback_data=f"bs:attack:{game_id}:{i}:{c}") for i in range(5, 10)]
-    keyboard = [row1, row2]
+    back_button = [InlineKeyboardButton("« Back", callback_data=f"bs:back_to_col_select:{game_id}")]
+    keyboard = [row1, row2, back_button]
 
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def bs_back_to_col_select_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the player going back from row selection to column selection."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        # Data format: bs:back_to_col_select:{game_id}
+        _, _, game_id = query.data.split(':')
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error unpacking bs_back_to_col_select_handler callback data: {query.data} | Error: {e}")
+        await query.edit_message_text("An error occurred. Please try again.")
+        return
+
+    # To revert the view, we simply call the function that sends the turn message again.
+    # It will edit the existing message because we provide the message_id and chat_id.
+    await bs_send_turn_message(context, game_id, message_id=query.message.message_id, chat_id=query.message.chat_id)
+
 
 async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the player's final attack choice."""
@@ -3535,6 +3554,7 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(connect_four_move_handler, pattern=r'^c4:move:.*'))
     app.add_handler(CallbackQueryHandler(tictactoe_move_handler, pattern=r'^ttt:move:.*'))
     app.add_handler(CallbackQueryHandler(bs_select_col_handler, pattern=r'^bs:col:.*'))
+    app.add_handler(CallbackQueryHandler(bs_back_to_col_select_handler, pattern=r'^bs:back_to_col_select:.*'))
     app.add_handler(CallbackQueryHandler(bs_attack_handler, pattern=r'^bs:attack:.*'))
     app.add_handler(CallbackQueryHandler(help_menu_handler, pattern=r'^help_'))
     app.add_handler(MessageHandler(filters.Dice(), dice_roll_handler))
