@@ -846,6 +846,10 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
     loser_name = get_display_name(loser_id, loser_member.user.full_name)
     winner_name = get_display_name(winner_id, winner_member.user.full_name)
 
+    # Add a revenge button
+    keyboard = [[InlineKeyboardButton("Revenge 😈", callback_data=f"game:revenge:{game_id}:{loser_id}:{winner_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     if loser_stake['type'] == 'points':
         points_val = loser_stake['value']
         await add_user_points(game['group_id'], winner_id, points_val, context)
@@ -854,16 +858,17 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
         await context.bot.send_message(
             game['group_id'],
             message,
-            parse_mode='HTML'
+            parse_mode='HTML',
+            reply_markup=reply_markup
         )
     else:  # media
         caption = f"{winner_name} won the game! This is the loser's stake from {loser_name}."
         if loser_stake['type'] == 'photo':
-            await context.bot.send_photo(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            await context.bot.send_photo(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
         elif loser_stake['type'] == 'video':
-            await context.bot.send_video(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            await context.bot.send_video(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
         elif loser_stake['type'] == 'voice':
-            await context.bot.send_voice(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            await context.bot.send_voice(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
 
     # Private messages to players (Battleship only)
     if game.get('game_type') == 'battleship':
@@ -880,6 +885,73 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
     game['status'] = 'complete'
     await save_games_data_async(games_data)
     await delete_tracked_messages(context, game_id)
+
+
+async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the revenge button click, allowing a loser to start a new game."""
+    query = update.callback_query
+
+    _, _, old_game_id, loser_id_str, winner_id_str = query.data.split(':')
+    loser_id = int(loser_id_str)
+    winner_id = int(winner_id_str)
+
+    if query.from_user.id != loser_id:
+        await query.answer("This is not your revenge to claim!", show_alert=True)
+        return
+
+    await query.answer()
+
+    games_data = await load_games_data_async()
+    old_game = games_data.get(old_game_id)
+    if not old_game:
+        await query.edit_message_text("The original game data could not be found. It might be too old.")
+        return
+
+    group_id = old_game['group_id']
+
+    for game in games_data.values():
+        if game.get('group_id') == group_id and game.get('status') != 'complete':
+            await context.bot.send_message(group_id, "There is already an active game in this group. Please wait for it to finish before starting a revenge match.")
+            return
+
+    challenger_user = await context.bot.get_chat_member(group_id, loser_id)
+    opponent_user = await context.bot.get_chat_member(group_id, winner_id)
+
+    game_id = str(uuid.uuid4())
+    games_data[game_id] = {
+        "group_id": group_id,
+        "challenger_id": challenger_user.user.id,
+        "opponent_id": opponent_user.user.id,
+        "is_revenge": True,
+        "status": "pending_game_selection",
+        "messages_to_delete": [],
+        "last_activity": time.time()
+    }
+    await save_games_data_async(games_data)
+
+    challenger_name = get_display_name(challenger_user.user.id, challenger_user.user.full_name)
+    opponent_name = get_display_name(opponent_user.user.id, opponent_user.user.full_name)
+
+    await context.bot.send_message(
+        chat_id=group_id,
+        text=f"{challenger_name} wants revenge against {opponent_name}! {challenger_name}, check your private messages to set up the game.",
+        parse_mode='HTML'
+    )
+
+    try:
+        keyboard = [[InlineKeyboardButton("Start Revenge Setup", callback_data=f"game:setup:start:{game_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await send_and_track_message(
+            context,
+            challenger_user.user.id,
+            game_id,
+            "Let's set up your revenge! Click the button below to begin.",
+            reply_markup=reply_markup
+        )
+    except Exception:
+        logger.exception(f"Failed to send private message to user {challenger_user.user.id}")
+
+    await query.edit_message_reply_markup(reply_markup=None)
 
 
 async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3392,6 +3464,18 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
             )
 
     elif response_type == 'refuse':
+        if game.get('is_revenge'):
+            winner_name = get_display_name(game['opponent_id'], update.effective_user.full_name)
+            await context.bot.send_message(
+                chat_id=game['group_id'],
+                text=f"{winner_name} is a coward and has refused to defend their title and has therefore been exposed.",
+                parse_mode='HTML'
+            )
+            del games_data[game_id]
+            await save_games_data_async(games_data)
+            await query.edit_message_text("Revenge challenge refused.")
+            return
+
         challenger_id = game['challenger_id']
         challenger_stake = game['challenger_stake']
 
@@ -3537,28 +3621,40 @@ if __name__ == '__main__':
     # Add the unknown command handler with a low priority to catch anything not handled yet
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler), group=1)
 
-    game_setup_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(start_game_setup, pattern=r'^game:setup:start:.*'),
-            CallbackQueryHandler(start_opponent_setup, pattern=r'^game:setup:opponent:.*')
+    # Separate conversation handlers for challenger and opponent to avoid state conflicts.
+    shared_game_setup_states = {
+        GAME_SELECTION: [CallbackQueryHandler(game_selection, pattern=r'^game:(dice|connect_four|battleship|tictactoe):.*')],
+        ROUND_SELECTION: [CallbackQueryHandler(round_selection, pattern=r'^rounds:\d+:.*')],
+        STAKE_TYPE_SELECTION: [CallbackQueryHandler(stake_type_selection, pattern=r'^stake:(points|media):.*')],
+        STAKE_SUBMISSION_POINTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, stake_submission_points)],
+        STAKE_SUBMISSION_MEDIA: [MessageHandler(filters.ATTACHMENT, stake_submission_media)],
+        CONFIRMATION: [
+            CallbackQueryHandler(confirm_game_setup, pattern=r'^confirm_game:.*'),
+            CallbackQueryHandler(restart_game_setup, pattern='^restart_game:.*'),
+            CallbackQueryHandler(cancel_game_setup, pattern='^cancel_game:.*'),
         ],
-        states={
-            GAME_SELECTION: [CallbackQueryHandler(game_selection, pattern=r'^game:(dice|connect_four|battleship|tictactoe):.*')],
-            ROUND_SELECTION: [CallbackQueryHandler(round_selection, pattern=r'^rounds:\d+:.*')],
-            STAKE_TYPE_SELECTION: [CallbackQueryHandler(stake_type_selection, pattern=r'^stake:(points|media):.*')],
-            STAKE_SUBMISSION_POINTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, stake_submission_points)],
-            STAKE_SUBMISSION_MEDIA: [MessageHandler(filters.ATTACHMENT, stake_submission_media)],
-            CONFIRMATION: [
-                CallbackQueryHandler(confirm_game_setup, pattern=r'^confirm_game:.*'),
-                CallbackQueryHandler(restart_game_setup, pattern='^restart_game:'),
-                CallbackQueryHandler(cancel_game_setup, pattern='^cancel_game:'),
-            ],
-        },
-        fallbacks=[
-            CallbackQueryHandler(cancel_game_setup, pattern='^cancel_game:'),
-            CommandHandler('cancel', cancel_game_setup)
-        ],
+    }
+    shared_game_setup_fallbacks = [
+        CallbackQueryHandler(cancel_game_setup, pattern='^cancel_game:.*'),
+        CommandHandler('cancel', cancel_game_setup)
+    ]
+
+    challenger_game_setup_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_game_setup, pattern=r'^game:setup:start:.*')],
+        states=shared_game_setup_states,
+        fallbacks=shared_game_setup_fallbacks,
+        per_user=True,
+        per_chat=False,
     )
+
+    opponent_game_setup_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_opponent_setup, pattern=r'^game:setup:opponent:.*')],
+        states=shared_game_setup_states,
+        fallbacks=shared_game_setup_fallbacks,
+        per_user=True,
+        per_chat=False,
+    )
+
     # Battleship placement handler
     battleship_placement_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(bs_start_placement, pattern=r'^bs:placement:start:.*')],
@@ -3570,8 +3666,10 @@ if __name__ == '__main__':
     )
     app.add_handler(battleship_placement_handler)
 
-    app.add_handler(game_setup_handler)
+    app.add_handler(challenger_game_setup_handler)
+    app.add_handler(opponent_game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
+    app.add_handler(CallbackQueryHandler(revenge_handler, pattern=r'^game:revenge:.*'))
     app.add_handler(CallbackQueryHandler(connect_four_move_handler, pattern=r'^c4:move:.*'))
     app.add_handler(CallbackQueryHandler(tictactoe_move_handler, pattern=r'^ttt:move:.*'))
     app.add_handler(CallbackQueryHandler(bs_select_col_handler, pattern=r'^bs:col:.*'))
