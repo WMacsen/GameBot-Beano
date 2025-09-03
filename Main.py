@@ -169,7 +169,13 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     original_user_mention = f'<a href="tg://user?id={target_user.id}">{html.escape(target_user.full_name)}</a>'
 
     titles = load_user_titles()
-    titles[str(target_user.id)] = title
+    group_id_str = str(update.effective_chat.id)
+
+    # Ensure the group key exists
+    if group_id_str not in titles:
+        titles[group_id_str] = {}
+
+    titles[group_id_str][str(target_user.id)] = title
     save_user_titles(titles)
 
     # Now, use the original mention in the confirmation message.
@@ -215,16 +221,17 @@ async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     titles = load_user_titles()
+    group_id_str = str(update.effective_chat.id)
     target_id_str = str(target_user.id)
-    display_name = get_display_name(target_user.id, target_user.full_name) # Get name before potentially removing title
+    display_name = get_display_name(target_user.id, target_user.full_name, update.effective_chat.id) # Get name before potentially removing title
 
-    if target_id_str in titles:
-        del titles[target_id_str]
+    if group_id_str in titles and target_id_str in titles[group_id_str]:
+        del titles[group_id_str][target_id_str]
         save_user_titles(titles)
         # Use the name *without* the title for the confirmation message.
-        await update.message.reply_text(f"Title for {html.escape(target_user.full_name)} has been removed.", parse_mode='HTML')
+        await update.message.reply_text(f"Title for {html.escape(target_user.full_name)} has been removed for this group.", parse_mode='HTML')
     else:
-        await update.message.reply_text(f"User {display_name} does not have a title.", parse_mode='HTML')
+        await update.message.reply_text(f"User {display_name} does not have a title in this group.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -330,14 +337,18 @@ def is_owner(user_id):
     logger.debug(f"is_owner({user_id}) -> {result}")
     return result
 
-def get_display_name(user_id: int, full_name: str) -> str:
+def get_display_name(user_id: int, full_name: str, group_id: int = None) -> str:
     """
     Determines the display name for a user, returning a taggable HTML mention.
-    If the user has a title, the title is used as the link text.
-    Otherwise, the user's full name is used.
+    If a group_id is provided, it attempts to find a group-specific title.
+    If no title is found, it falls back to the user's full name.
     """
     titles = load_user_titles()
-    display_text = titles.get(str(user_id), full_name)
+    display_text = full_name
+
+    if group_id:
+        group_titles = titles.get(str(group_id), {})
+        display_text = group_titles.get(str(user_id), full_name)
 
     return f'<a href="tg://user?id={user_id}">{html.escape(display_text)}</a>'
 
@@ -406,7 +417,7 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for admin_id in added_ids:
                 user = next((a.user for a in tg_admins if str(a.user.id) == admin_id), None)
                 if user:
-                    added_mentions.append(get_display_name(user.id, user.full_name))
+                    added_mentions.append(get_display_name(user.id, user.full_name, update.effective_chat.id))
                     cache_user_profile(user)
             if added_mentions:
                 response_lines.append("New admins added: " + ", ".join(added_mentions))
@@ -560,7 +571,7 @@ async def check_for_punishment(group_id, user_id, old_points, new_points, contex
             if message not in triggered_punishments:
                 # Punish the user
                 user_member = await context.bot.get_chat_member(group_id, user_id)
-                display_name = get_display_name(user_id, user_member.user.full_name)
+                display_name = get_display_name(user_id, user_member.user.full_name, group_id)
                 await context.bot.send_message(
                     chat_id=group_id,
                     text=f"🚨 <b>Punishment Issued!</b> 🚨\n{display_name} has fallen below {threshold} points. Punishment: {message}",
@@ -846,8 +857,8 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
 
     loser_member = await context.bot.get_chat_member(game['group_id'], loser_id)
     winner_member = await context.bot.get_chat_member(game['group_id'], winner_id)
-    loser_name = get_display_name(loser_id, loser_member.user.full_name)
-    winner_name = get_display_name(winner_id, winner_member.user.full_name)
+    loser_name = get_display_name(loser_id, loser_member.user.full_name, game['group_id'])
+    winner_name = get_display_name(winner_id, winner_member.user.full_name, game['group_id'])
 
     # Store winner and loser IDs for the revenge handler
     game['winner_id'] = winner_id
@@ -939,14 +950,15 @@ async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "challenger_id": challenger_user.user.id,
         "opponent_id": opponent_user.user.id,
         "is_revenge": True,
+        "old_game_id": old_game_id,
         "status": "pending_game_selection",
         "messages_to_delete": [],
         "last_activity": time.time()
     }
     await save_games_data_async(games_data)
 
-    challenger_name = get_display_name(challenger_user.user.id, challenger_user.user.full_name)
-    opponent_name = get_display_name(opponent_user.user.id, opponent_user.user.full_name)
+    challenger_name = get_display_name(challenger_user.user.id, challenger_user.user.full_name, group_id)
+    opponent_name = get_display_name(opponent_user.user.id, opponent_user.user.full_name, group_id)
 
     await context.bot.send_message(
         chat_id=group_id,
@@ -1016,7 +1028,7 @@ async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAUL
         loser_id = game['opponent_id'] if user_id == game['challenger_id'] else game['challenger_id']
 
         winner_member = await context.bot.get_chat_member(game['group_id'], winner_id)
-        winner_name = get_display_name(winner_id, winner_member.user.full_name)
+        winner_name = get_display_name(winner_id, winner_member.user.full_name, game['group_id'])
 
         board_text, _ = create_connect_four_board_markup(board, game_id)
 
@@ -1044,7 +1056,7 @@ async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAUL
     # Update board message
     turn_player_id = game['turn']
     turn_player_member = await context.bot.get_chat_member(game['group_id'], turn_player_id)
-    turn_player_name = get_display_name(turn_player_id, turn_player_member.user.full_name)
+    turn_player_name = get_display_name(turn_player_id, turn_player_member.user.full_name, game['group_id'])
     board_text, reply_markup = create_connect_four_board_markup(game['board'], game_id)
 
     await query.edit_message_text(
@@ -1095,8 +1107,8 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
 
     challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
     opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
-    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
-    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
     await context.bot.send_message(
         game['group_id'],
@@ -1188,7 +1200,7 @@ async def tictactoe_move_handler(update: Update, context: ContextTypes.DEFAULT_T
         winner_id = user_id
         loser_id = game['opponent_id'] if user_id == game['challenger_id'] else game['challenger_id']
         winner_member = await context.bot.get_chat_member(game['group_id'], winner_id)
-        winner_name = get_display_name(winner_id, winner_member.user.full_name)
+        winner_name = get_display_name(winner_id, winner_member.user.full_name, game['group_id'])
 
         reply_markup = create_tictactoe_board_markup(board, game_id)
         await query.edit_message_text(
@@ -1215,7 +1227,7 @@ async def tictactoe_move_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     turn_player_id = game['turn']
     turn_player_member = await context.bot.get_chat_member(game['group_id'], turn_player_id)
-    turn_player_name = get_display_name(turn_player_id, turn_player_member.user.full_name)
+    turn_player_name = get_display_name(turn_player_id, turn_player_member.user.full_name, game['group_id'])
     reply_markup = create_tictactoe_board_markup(board, game_id)
 
     await query.edit_message_text(
@@ -1276,8 +1288,8 @@ async def handle_challenge_timeout(context: ContextTypes.DEFAULT_TYPE, game_id: 
 
     challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
     opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
-    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
-    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
     await context.bot.send_message(
         game['group_id'],
@@ -1309,8 +1321,8 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
 
     challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
     opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
-    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
-    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
     await context.bot.send_message(
         game['group_id'],
@@ -1397,15 +1409,15 @@ async def generate_public_bs_board_message(context: ContextTypes.DEFAULT_TYPE, g
     challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
     opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
 
-    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
-    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
     challenger_board_text = generate_bs_board_text(game['boards'][str(challenger_id)], show_ships=False)
     opponent_board_text = generate_bs_board_text(game['boards'][str(opponent_id)], show_ships=False)
 
     turn_player_id = game['turn']
     turn_player_member = await context.bot.get_chat_member(game['group_id'], turn_player_id)
-    turn_player_name = get_display_name(turn_player_id, turn_player_member.user.full_name)
+    turn_player_name = get_display_name(turn_player_id, turn_player_member.user.full_name, game['group_id'])
 
     text = (
         f"<b>Battleship!</b>\n\n"
@@ -1573,7 +1585,7 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     all_sunk = all(check_bs_ship_sunk(opponent_board, coords) for coords in game['ships'][opponent_id_str].values())
 
     if all_sunk:
-        winner_name = get_display_name(int(user_id_str), query.from_user.full_name)
+        winner_name = get_display_name(int(user_id_str), query.from_user.full_name, game['group_id'])
         win_message = f"The game is over! {winner_name} has won the battle!"
         await context.bot.send_message(
             chat_id=game['group_id'],
@@ -1600,7 +1612,7 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Failed to edit public battleship board for game {game_id}: {e}")
 
     # Notify players privately
-    attacker_name = get_display_name(int(user_id_str), query.from_user.full_name)
+    attacker_name = get_display_name(int(user_id_str), query.from_user.full_name, game['group_id'])
     coord_name = f"{chr(ord('A')+c)}{r+1}"
     await query.edit_message_text(f"You fired at {coord_name}. {result_text}\n\nYour turn is over. The board in the group has been updated.", parse_mode='HTML')
 
@@ -1942,7 +1954,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data.pop(REWARD_STATE, None)
             return
         if reward['name'].lower() == 'other':
-            display_name = get_display_name(user_id, update.effective_user.full_name)
+            display_name = get_display_name(user_id, update.effective_user.full_name, group_id)
             chat_title = update.effective_chat.title
 
             message = f"You have selected 'Other', {display_name}. Please contact Beta or Lion to determine your reward and its cost."
@@ -1969,7 +1981,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await add_user_points(group_id, user_id, -reward['cost'], context)
 
         # Public announcement
-        display_name = get_display_name(user_id, update.effective_user.full_name)
+        display_name = get_display_name(user_id, update.effective_user.full_name, group_id)
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=f"🎁 <b>{display_name}</b> just bought the reward: <b>{reward['name']}</b>! 🎉",
@@ -2029,7 +2041,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data.pop(FREE_REWARD_SELECTION, None)
             return
 
-        display_name = get_display_name(user_id, update.effective_user.full_name)
+        display_name = get_display_name(user_id, update.effective_user.full_name, group_id)
         await update.message.reply_text(f"Congratulations! You have claimed your free reward: <b>{reward['name']}</b>!", parse_mode='HTML')
 
         admins = await context.bot.get_chat_administrators(update.effective_chat.id)
@@ -2064,7 +2076,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         task_description = update.message.text.strip()
         group_id = state['group_id']
         challenger_user = update.effective_user
-        challenger_name = get_display_name(challenger_user.id, challenger_user.full_name)
+        challenger_name = get_display_name(challenger_user.id, challenger_user.full_name, group_id)
         target_username = state['target_username']
 
         # Announce in group
@@ -2214,8 +2226,8 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     await save_games_data_async(games_data)
 
-    challenger_name = get_display_name(challenger_user.id, challenger_user.full_name)
-    opponent_name = get_display_name(opponent_user.id, opponent_user.full_name)
+    challenger_name = get_display_name(challenger_user.id, challenger_user.full_name, group_id)
+    opponent_name = get_display_name(opponent_user.id, opponent_user.full_name, group_id)
 
     sent_message = await send_and_track_message(
         context,
@@ -2312,8 +2324,8 @@ async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     opponent_id = game['opponent_id']
     challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
     opponent_member = await context.bot.get_chat_member(game['group_id'], opponent_id)
-    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
-    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name)
+    challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
+    opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
     await context.bot.send_message(
         game['group_id'],
@@ -2543,7 +2555,7 @@ async def point_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Fetch and display points for the determined target
     points = get_user_points(group_id, target_user.id)
-    display_name = get_display_name(target_user.id, target_user.full_name)
+    display_name = get_display_name(target_user.id, target_user.full_name, group_id)
 
     if target_user.id == user.id:
         await update.message.reply_text(f"You have {points} points.")
@@ -2567,7 +2579,7 @@ async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for idx, (uid, pts) in enumerate(top5, 1):
         try:
             member = await context.bot.get_chat_member(update.effective_chat.id, int(uid))
-            name = get_display_name(int(uid), member.user.full_name)
+            name = get_display_name(int(uid), member.user.full_name, update.effective_chat.id)
         except Exception:
             name = f"User {uid}"
         lines.append(f"<b>{idx}.</b> <i>{name}</i> — <b>{pts} points</b> {'🏆' if idx==1 else ''}")
@@ -3190,7 +3202,7 @@ async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         stake_display_text = f"a {stake_dict['type'].capitalize()}"
 
     opponent_member = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
-    opponent_name = get_display_name(opponent_member.user.id, opponent_member.user.full_name)
+    opponent_name = get_display_name(opponent_member.user.id, opponent_member.user.full_name, game['group_id'])
 
     confirmation_text = (
         f"<b>Game Setup Confirmation</b>\n\n"
@@ -3294,8 +3306,8 @@ async def send_challenge_to_opponent(update: Update, context: ContextTypes.DEFAU
 
     challenger_member = await context.bot.get_chat_member(game['group_id'], game['challenger_id'])
     opponent_member = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
-    challenger_name = get_display_name(challenger_member.user.id, challenger_member.user.full_name)
-    opponent_name = get_display_name(opponent_member.user.id, opponent_member.user.full_name)
+    challenger_name = get_display_name(challenger_member.user.id, challenger_member.user.full_name, game['group_id'])
+    opponent_name = get_display_name(opponent_member.user.id, opponent_member.user.full_name, game['group_id'])
 
     challenge_text = (
         f"🚨 <b>New Challenge!</b> 🚨\n\n"
@@ -3363,7 +3375,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_game['last_roll'] = {'user_id': user_id, 'value': update.message.dice.value}
         other_player_id = active_game['challenger_id'] if user_id == active_game['opponent_id'] else active_game['opponent_id']
         other_player_member = await context.bot.get_chat_member(active_game['group_id'], other_player_id)
-        other_player_name = get_display_name(other_player_id, other_player_member.user.full_name)
+        other_player_name = get_display_name(other_player_id, other_player_member.user.full_name, active_game['group_id'])
         await send_and_track_message(context, update.effective_chat.id, active_game_id, f"You rolled a {update.message.dice.value}. Waiting for {other_player_name} to roll.", parse_mode='HTML')
         await save_games_data_async(games_data) # Save the updated game data
         return
@@ -3395,7 +3407,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_game['opponent_score'] += 1
 
     winner_member = await context.bot.get_chat_member(active_game['group_id'], winner_id)
-    winner_name = get_display_name(winner_id, winner_member.user.full_name)
+    winner_name = get_display_name(winner_id, winner_member.user.full_name, active_game['group_id'])
     win_message = f"{winner_name} wins round {active_game['current_round']}!\n" \
                   f"Score: {active_game['challenger_score']} - {active_game['opponent_score']}"
     await send_and_track_message(
@@ -3481,12 +3493,57 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
 
     elif response_type == 'refuse':
         if game.get('is_revenge'):
-            winner_name = get_display_name(game['opponent_id'], update.effective_user.full_name)
-            await context.bot.send_message(
-                chat_id=game['group_id'],
-                text=f"{winner_name} is a coward and has refused to defend their title and has therefore been exposed.",
-                parse_mode='HTML'
-            )
+            # --- Revenge Refusal Logic ---
+            old_game_id = game.get('old_game_id')
+            if not old_game_id or old_game_id not in games_data:
+                # Fallback if old game data is missing
+                refuser_name = get_display_name(game['opponent_id'], update.effective_user.full_name, game['group_id'])
+                await context.bot.send_message(
+                    chat_id=game['group_id'],
+                    text=f"{refuser_name} has refused the revenge match, but the original game data was not found.",
+                    parse_mode='HTML'
+                )
+            else:
+                old_game = games_data[old_game_id]
+                refuser_id = old_game['winner_id']
+                challenger_id = old_game['loser_id']
+
+                # Determine the refuser's stake from the old game
+                refuser_stake = old_game.get('challenger_stake') if str(old_game['challenger_id']) == str(refuser_id) else old_game.get('opponent_stake')
+
+                refuser_member = await context.bot.get_chat_member(game['group_id'], refuser_id)
+                challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
+                refuser_name = get_display_name(refuser_id, refuser_member.user.full_name, game['group_id'])
+                challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
+
+                if refuser_stake:
+                    if refuser_stake['type'] == 'points':
+                        points_val = refuser_stake['value']
+                        await add_user_points(game['group_id'], challenger_id, points_val, context)
+                        await add_user_points(game['group_id'], refuser_id, -points_val, context)
+                        await context.bot.send_message(
+                            game['group_id'],
+                            f"{refuser_name} has refused the revenge match and forfeited {points_val} points to {challenger_name}!",
+                            parse_mode='HTML'
+                        )
+                    else: # media
+                        media_type = refuser_stake['type']
+                        file_id = refuser_stake['value']
+                        caption = f"{refuser_name} has refused the revenge match and forfeited their stake to {challenger_name}!"
+                        if media_type == 'photo':
+                            await context.bot.send_photo(game['group_id'], file_id, caption=caption, parse_mode='HTML')
+                        elif media_type == 'video':
+                            await context.bot.send_video(game['group_id'], file_id, caption=caption, parse_mode='HTML')
+                        elif media_type == 'voice':
+                            await context.bot.send_voice(game['group_id'], file_id, caption=caption, parse_mode='HTML')
+                else:
+                     await context.bot.send_message(
+                        game['group_id'],
+                        f"{refuser_name} has refused the revenge match, but no stake was found in the original game.",
+                        parse_mode='HTML'
+                    )
+
+            # Clean up the revenge game
             del games_data[game_id]
             await save_games_data_async(games_data)
             await query.edit_message_text("Revenge challenge refused.")
@@ -3496,11 +3553,11 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
         challenger_stake = game['challenger_stake']
 
         challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
-        challenger_name = get_display_name(challenger_id, challenger_member.user.full_name)
+        challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
 
         await context.bot.send_message(
             chat_id=challenger_id,
-            text=f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name)}.",
+            text=f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name, game['group_id'])}.",
             parse_mode='HTML'
         )
 
