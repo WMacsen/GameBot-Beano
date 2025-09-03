@@ -849,8 +849,12 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
     loser_name = get_display_name(loser_id, loser_member.user.full_name)
     winner_name = get_display_name(winner_id, winner_member.user.full_name)
 
-    # Add a revenge button
-    keyboard = [[InlineKeyboardButton("Revenge 😈", callback_data=f"game:revenge:{game_id}:{loser_id}:{winner_id}")]]
+    # Store winner and loser IDs for the revenge handler
+    game['winner_id'] = winner_id
+    game['loser_id'] = loser_id
+
+    # Add a revenge button with shortened callback_data
+    keyboard = [[InlineKeyboardButton("Revenge 😈", callback_data=f"game:revenge:{game_id}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if loser_stake['type'] == 'points':
@@ -893,21 +897,30 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
 async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the revenge button click, allowing a loser to start a new game."""
     query = update.callback_query
-
-    _, _, old_game_id, loser_id_str, winner_id_str = query.data.split(':')
-    loser_id = int(loser_id_str)
-    winner_id = int(winner_id_str)
-
-    if query.from_user.id != loser_id:
-        await query.answer("This is not your revenge to claim!", show_alert=True)
-        return
-
     await query.answer()
+
+    try:
+        _, _, old_game_id = query.data.split(':')
+    except (ValueError, IndexError):
+        logger.error(f"Could not parse revenge callback data: {query.data}")
+        await query.edit_message_text("An error occurred while processing the revenge request.")
+        return
 
     games_data = await load_games_data_async()
     old_game = games_data.get(old_game_id)
     if not old_game:
         await query.edit_message_text("The original game data could not be found. It might be too old.")
+        return
+
+    loser_id = old_game.get('loser_id')
+    winner_id = old_game.get('winner_id')
+
+    if not loser_id or not winner_id:
+        await query.edit_message_text("The original game data is missing winner/loser information and a revenge match cannot be started.")
+        return
+
+    if query.from_user.id != loser_id:
+        await query.answer("This is not your revenge to claim!", show_alert=True)
         return
 
     group_id = old_game['group_id']
