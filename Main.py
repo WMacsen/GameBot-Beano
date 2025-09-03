@@ -2871,7 +2871,7 @@ async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     item_list = group_data.get(f'{choice}s', [])
 
     if not item_list:
-        await query.edit_message_text(f"There are no {choice}s in the list for this group! An admin can add some with /addtod.")
+        await query.edit_message_text(f"There are no {choice}s in the list for this group! Anyone can add some with /addtod.")
         return
 
     selected_item = random.choice(item_list)
@@ -4291,7 +4291,6 @@ if __name__ == '__main__':
     add_command(app, 'update', update_command)
     add_command(app, 'viewstakes', viewstakes_command)
     add_command(app, 'dareme', dareme_command)
-    add_command(app, 'addtod', addtod_command)
     add_command(app, 'managetod', managetod_command)
 
     # Add the conversation handler with a high priority
@@ -4350,8 +4349,13 @@ if __name__ == '__main__':
     app.add_handler(battleship_placement_handler)
 
     # Truth or Dare add handler
+    bot_username_without_at = BOT_USERNAME.lstrip('@')
     add_tod_handler = ConversationHandler(
-        entry_points=[CommandHandler('addtod', addtod_command)],
+        entry_points=[
+            CommandHandler('addtod', addtod_command),
+            MessageHandler(filters.Regex(rf'^\.addtod(?:@{bot_username_without_at})?(\s|$)'), addtod_command),
+            MessageHandler(filters.Regex(rf'^!addtod(?:@{bot_username_without_at})?(\s|$)'), addtod_command),
+        ],
         states={
             CHOOSE_TOD_TYPE: [CallbackQueryHandler(tod_handle_type_choice, pattern=r'^addtod:type:.*')],
             AWAIT_TOD_CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, tod_handle_content_submission)],
