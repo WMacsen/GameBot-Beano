@@ -2026,6 +2026,12 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     Handles all conversation-based interactions after a command has been issued.
     This acts as a router based on the state stored in context.user_data.
     """
+    # Heuristic check to see if a ConversationHandler is active.
+    # Its state is stored under a tuple key, while this manual handler uses string keys.
+    # If a ConversationHandler is active, we should not interfere.
+    if any(isinstance(key, tuple) for key in context.user_data.keys()):
+        return
+
     # === Add Reward Flow: Step 2 (Cost) ===
     if ADDREWARD_COST_STATE in context.user_data:
         state = context.user_data[ADDREWARD_COST_STATE]
