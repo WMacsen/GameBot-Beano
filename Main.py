@@ -1397,12 +1397,80 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
     await save_games_data_async(games_data)
     await delete_tracked_messages(context, game_id)
 
+async def handle_tod_timeout(context: ContextTypes.DEFAULT_TYPE, tod_game_id: str):
+    """Handles a Truth or Dare game that has timed out while awaiting proof."""
+    logger.info(f"Handling timeout for ToD game {tod_game_id}")
+    active_games = await load_active_tod_games()
+    game = active_games.get(tod_game_id)
+
+    if not game:
+        logger.warning(f"ToD game {tod_game_id} not found for timeout handling, it might have been completed or cancelled already.")
+        return
+
+    group_id = game['group_id']
+    user_id = game['user_id']
+
+    # Fetch user details for display name
+    try:
+        user_member = await context.bot.get_chat_member(group_id, user_id)
+        display_name = get_display_name(user_id, user_member.user.full_name, int(group_id))
+    except Exception as e:
+        logger.error(f"Could not fetch user {user_id} for ToD timeout message: {e}")
+        display_name = f"User {user_id}"
+
+    # Penalize user
+    await add_user_points(int(group_id), user_id, -15, context)
+
+    # Notify group
+    await context.bot.send_message(
+        chat_id=group_id,
+        text=f"⏰ {display_name} ran out of time to provide proof for their {game['type']} and has been penalized 15 points.",
+        parse_mode='HTML'
+    )
+
+    # Notify admins (similar to refusal)
+    admin_data = load_admin_data()
+    group_admins = {uid for uid, groups in admin_data.get('admins', {}).items() if str(group_id) in groups}
+    owner_id = admin_data.get('owner')
+    if owner_id:
+        group_admins.add(owner_id)
+
+    notification_text = (
+        f"🔔 <b>Timeout Notification</b> 🔔\n\n"
+        f"User: {display_name}\n"
+        f"Group ID: {group_id}\n"
+        f"Task timed out: <i>{html.escape(game['text'])}</i>"
+    )
+    for admin_id in group_admins:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=notification_text, parse_mode='HTML')
+        except Exception as e:
+            logger.warning(f"Failed to notify admin {admin_id} of ToD timeout: {e}")
+
+    # Edit original message
+    try:
+        original_text = f"The user's time ran out for the {game['type']}:\n\n<i>{html.escape(game['text'])}</i>"
+        await context.bot.edit_message_text(
+            chat_id=game['chat_id'],
+            message_id=game['message_id'],
+            text=original_text,
+            reply_markup=None,
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.error(f"Could not edit original ToD message after timeout: {e}")
+
+    # Clean up game
+    if tod_game_id in active_games:
+        del active_games[tod_game_id]
+        await save_active_tod_games(active_games)
+
 async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
     """Periodically checks for inactive games and handles them."""
-    games_data = await load_games_data_async()
     now = time.time()
 
-    # Create a copy of items to avoid issues with modifying dict during iteration
+    # --- Handle 2-Player Game Inactivity ---
+    games_data = await load_games_data_async()
     for game_id, game in list(games_data.items()):
         if game.get('status', '') not in ['pending_opponent_acceptance', 'active', 'pending_game_selection', 'pending_opponent_stake']:
             continue
@@ -1413,13 +1481,13 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
         if game.get('status') == 'pending_opponent_acceptance' and (now - last_activity > 120):
             logger.info(f"Game {game_id} timed out at acceptance stage. Cancelling without penalty.")
             await handle_challenge_timeout(context, game_id)
-            continue # Game is handled, move to the next one
+            continue
 
         # 7 minutes timeout -> cancel
         if now - last_activity > 420:
             logger.info(f"Game {game_id} timed out. Cancelling.")
             await handle_game_cancellation(context, game_id)
-            # handle_game_cancellation will change status, so this game won't be processed again
+            continue
 
         # 5 minutes timeout -> warning
         elif now - last_activity > 300 and not game.get('warning_sent'):
@@ -1436,6 +1504,35 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
                 await save_games_data_async(games_data)
             except Exception as e:
                 logger.error(f"Failed to send inactivity warning for game {game_id}: {e}")
+
+    # --- Handle Truth or Dare Inactivity ---
+    active_tod_games = await load_active_tod_games()
+    for tod_game_id, tod_game in list(active_tod_games.items()):
+        if tod_game.get('status') != 'awaiting_proof':
+            continue
+
+        timestamp = tod_game.get('timestamp', 0)
+
+        # 7 minutes timeout (420s) -> cancel
+        if now - timestamp > 420:
+            logger.info(f"ToD game {tod_game_id} timed out while awaiting proof. Cancelling.")
+            await handle_tod_timeout(context, tod_game_id)
+            continue
+
+        # 5 minutes timeout (300s) -> warning
+        elif now - timestamp > 300 and not tod_game.get('warning_sent'):
+            logger.info(f"ToD game {tod_game_id} inactive for 5 minutes. Sending warning.")
+            try:
+                user = await context.bot.get_chat_member(tod_game['group_id'], tod_game['user_id'])
+                await context.bot.send_message(
+                    chat_id=tod_game['group_id'],
+                    text=f"Warning: {user.user.mention_html()}, you have 2 minutes left to provide proof for your {tod_game['type']}!",
+                    parse_mode='HTML'
+                )
+                active_tod_games[tod_game_id]['warning_sent'] = True
+                await save_active_tod_games(active_tod_games)
+            except Exception as e:
+                logger.error(f"Failed to send inactivity warning for ToD game {tod_game_id}: {e}")
 
 
 async def generate_public_bs_board_message(context: ContextTypes.DEFAULT_TYPE, game: dict) -> str:
@@ -2244,9 +2341,11 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     games_data = await load_games_data_async()
     group_id = update.effective_chat.id
+    # Concurrency Check: Only checks for active 2-player games (from games.json).
+    # This does not block Truth or Dare games, which are stored in a separate file.
     for game in games_data.values():
         if game.get('group_id') == group_id and game.get('status') != 'complete':
-            await update.message.reply_text("There is already an active game in this group. Please wait for it to finish.")
+            await update.message.reply_text("There is already an active 2-player game in this group. Please wait for it to finish.")
             return
 
     game_id = str(uuid.uuid4())
@@ -2728,10 +2827,16 @@ async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     group_id = str(update.effective_chat.id)
 
+    # Concurrency Check: Only checks for active ToD games (from active_tod_games.json).
+    # This does not block 2-player games, which are stored in a separate file.
     for game in active_games.values():
-        if game.get('user_id') == user_id and game.get('group_id') == group_id:
-             await update.message.reply_text("You already have an active truth or dare! Please complete or refuse it first.")
-             return
+        if game.get('group_id') == group_id:
+            # Check if it's the same user to give a specific message
+            if game.get('user_id') == user_id:
+                await update.message.reply_text("You already have an active truth or dare! Please complete or refuse it first.")
+            else:
+                await update.message.reply_text("There is already an active Truth or Dare game in this group. Please wait for it to finish.")
+            return
 
     keyboard = [
         [
@@ -4193,7 +4298,8 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
 
     # Handler for truth/dare proof submission
-    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VOICE & (~filters.COMMAND), tod_handle_proof_submission), group=0)
+    # Note: The parentheses around the first filter group are crucial to ensure correct operator precedence.
+    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VOICE) & ~filters.COMMAND, tod_handle_proof_submission), group=0)
 
     # Add the unknown command handler with a low priority to catch anything not handled yet
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler), group=1)
