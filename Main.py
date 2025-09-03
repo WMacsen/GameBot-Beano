@@ -2006,6 +2006,7 @@ ADDREWARD_COST_STATE = 'awaiting_addreward_cost'
 REMOVEREWARD_STATE = 'awaiting_removereward_name'
 ADDPOINTS_STATE = 'awaiting_addpoints_value'
 REMOVEPOINTS_STATE = 'awaiting_removepoints_value'
+AWAITING_TOD_CONTENT = 'awaiting_tod_content'
 
 @command_handler_wrapper(admin_only=False)
 async def reward_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2030,6 +2031,35 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # Its state is stored under a tuple key, while this manual handler uses string keys.
     # If a ConversationHandler is active, we should not interfere.
     if any(isinstance(key, tuple) for key in context.user_data.keys()):
+        return
+
+    # === Add ToD Content Flow ===
+    if AWAITING_TOD_CONTENT in context.user_data:
+        state = context.user_data[AWAITING_TOD_CONTENT]
+        add_type = state.get('type')
+        if not add_type:
+            await update.message.reply_text("Something went wrong, please start over with /addtod.")
+            context.user_data.clear()
+            return
+
+        group_id = str(update.effective_chat.id)
+        new_items = [item.strip() for item in update.message.text.split('\n') if item.strip()]
+
+        if not new_items:
+            await update.message.reply_text("I didn't receive any content. Please try again, or /cancel to exit.")
+            return
+
+        tod_data = await load_tod_data()
+        if group_id not in tod_data:
+            tod_data[group_id] = {"truths": [], "dares": []}
+
+        list_key = f"{add_type}s"
+        tod_data[group_id].setdefault(list_key, []).extend(new_items)
+
+        await save_tod_data(tod_data)
+
+        await update.message.reply_text(f"Successfully added {len(new_items)} new {add_type}(s)!")
+        context.user_data.pop(AWAITING_TOD_CONTENT, None)
         return
 
     # === Add Reward Flow: Step 2 (Cost) ===
@@ -2823,6 +2853,33 @@ You can choose from the following challenge games:
 # Truth or Dare Commands
 # =============================
 @command_handler_wrapper(admin_only=False)
+async def addtod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the conversation to add a new truth or dare."""
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("This command can only be used in group chats.")
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Truth", callback_data='addtod:truth'),
+            InlineKeyboardButton("Dare", callback_data='addtod:dare')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("What would you like to add?", reply_markup=reply_markup)
+
+async def addtod_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user's choice of adding a truth or a dare."""
+    query = update.callback_query
+    await query.answer()
+
+    choice_type = query.data.split(':')[1]
+    context.user_data[AWAITING_TOD_CONTENT] = {'type': choice_type}
+
+    await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add. You can send multiple in one message, just put each one on a new line.")
+
+
+@command_handler_wrapper(admin_only=False)
 async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /dareme - Starts a game of Truth or Dare. """
     if update.effective_chat.type not in ["group", "supergroup"]:
@@ -2910,101 +2967,6 @@ async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await save_active_tod_games(active_games)
 
 
-async def addtod_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Starts the conversation to add a new truth or dare."""
-    if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
-        return ConversationHandler.END
-
-    keyboard = [
-        [
-            InlineKeyboardButton("Truth", callback_data='addtod:type:truth'),
-            InlineKeyboardButton("Dare", callback_data='addtod:type:dare')
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("What would you like to add?", reply_markup=reply_markup)
-    return CHOOSE_TOD_TYPE
-
-async def tod_handle_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handles the user's choice of adding a truth or a dare."""
-    query = update.callback_query
-    await query.answer()
-
-    _, _, choice_type = query.data.split(':')
-    context.user_data['tod_add_type'] = choice_type
-
-    await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add. You can send multiple in one message, just put each one on a new line.")
-
-    return AWAIT_TOD_CONTENT
-
-async def tod_handle_content_submission(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handles the submission of new truths or dares."""
-    add_type = context.user_data.get('tod_add_type')
-    if not add_type:
-        await update.message.reply_text("Something went wrong, please start over with /addtod.")
-        context.user_data.clear()
-        return ConversationHandler.END
-
-    group_id = str(update.effective_chat.id)
-    new_items = [item.strip() for item in update.message.text.split('\n') if item.strip()]
-
-    if not new_items:
-        await update.message.reply_text("I didn't receive any content. Please try again, or /cancel to exit.")
-        return AWAIT_TOD_CONTENT
-
-    tod_data = await load_tod_data()
-    if group_id not in tod_data:
-        tod_data[group_id] = {"truths": [], "dares": []}
-
-    list_key = f"{add_type}s"
-    tod_data[group_id].setdefault(list_key, []).extend(new_items)
-
-    await save_tod_data(tod_data)
-
-    confirmation_message = f"Successfully added {len(new_items)} new {add_type}(s)!"
-
-    keyboard = [
-        [
-            InlineKeyboardButton("Add More", callback_data='addtod:more:yes'),
-            InlineKeyboardButton("Done", callback_data='addtod:more:no')
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"{confirmation_message}\n\nWould you like to add more?", reply_markup=reply_markup)
-
-    return CHOOSE_TOD_MORE
-
-async def tod_handle_more_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handles the user's choice to add more or finish."""
-    query = update.callback_query
-    await query.answer()
-
-    _, _, choice = query.data.split(':')
-
-    if choice == 'yes':
-        keyboard = [
-            [
-                InlineKeyboardButton("Truth", callback_data='addtod:type:truth'),
-                InlineKeyboardButton("Dare", callback_data='addtod:type:dare')
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("What would you like to add?", reply_markup=reply_markup)
-        return CHOOSE_TOD_TYPE
-    else:
-        await query.edit_message_text("Great, thanks for contributing!")
-        context.user_data.clear()
-        return ConversationHandler.END
-
-async def tod_add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Cancels the /addtod conversation."""
-    if 'tod_add_type' in context.user_data:
-        context.user_data.clear()
-        await update.message.reply_text("Process cancelled. Thanks for trying!")
-    else:
-        await update.message.reply_text("You are not currently adding any truths or dares.")
-    return ConversationHandler.END
 
 
 async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3513,7 +3475,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # Game Setup Conversation
 # =============================
 GAME_SELECTION, ROUND_SELECTION, STAKE_TYPE_SELECTION, STAKE_SUBMISSION_POINTS, STAKE_SUBMISSION_MEDIA, OPPONENT_SELECTION, CONFIRMATION, FREE_REWARD_SELECTION, ASK_TASK_TARGET, ASK_TASK_DESCRIPTION = range(10)
-CHOOSE_TOD_TYPE, AWAIT_TOD_CONTENT, CHOOSE_TOD_MORE = range(10, 13)
 
 
 async def start_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -4297,6 +4258,7 @@ if __name__ == '__main__':
     add_command(app, 'update', update_command)
     add_command(app, 'viewstakes', viewstakes_command)
     add_command(app, 'dareme', dareme_command)
+    add_command(app, 'addtod', addtod_command)
     add_command(app, 'managetod', managetod_command)
 
     # Add the conversation handler with a high priority
@@ -4354,28 +4316,10 @@ if __name__ == '__main__':
     )
     app.add_handler(battleship_placement_handler)
 
-    # Truth or Dare add handler
-    bot_username_without_at = BOT_USERNAME.lstrip('@')
-    add_tod_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler('addtod', addtod_command),
-            MessageHandler(filters.Regex(rf'^\.addtod(?:@{bot_username_without_at})?(\s|$)'), addtod_command),
-            MessageHandler(filters.Regex(rf'^!addtod(?:@{bot_username_without_at})?(\s|$)'), addtod_command),
-        ],
-        states={
-            CHOOSE_TOD_TYPE: [CallbackQueryHandler(tod_handle_type_choice, pattern=r'^addtod:type:.*')],
-            AWAIT_TOD_CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, tod_handle_content_submission)],
-            CHOOSE_TOD_MORE: [CallbackQueryHandler(tod_handle_more_choice, pattern=r'^addtod:more:.*')],
-        },
-        fallbacks=[CommandHandler('cancel', tod_add_cancel)],
-        per_user=True,
-        per_chat=True,
-    )
-    app.add_handler(add_tod_handler)
-
     app.add_handler(challenger_game_setup_handler)
     app.add_handler(opponent_game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
+    app.add_handler(CallbackQueryHandler(addtod_type_handler, pattern=r'^addtod:(truth|dare)$'))
     app.add_handler(CallbackQueryHandler(revenge_handler, pattern=r'^game:revenge:.*'))
     app.add_handler(CallbackQueryHandler(connect_four_move_handler, pattern=r'^c4:move:.*'))
     app.add_handler(CallbackQueryHandler(tictactoe_move_handler, pattern=r'^ttt:move:.*'))
