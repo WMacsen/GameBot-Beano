@@ -630,6 +630,11 @@ def set_user_points(group_id, user_id, points):
     logger.debug(f"Set points for user {user_id} in group {group_id} to {points}")
 
 async def check_for_punishment(group_id, user_id, old_points, new_points, context: ContextTypes.DEFAULT_TYPE):
+    # Punishments do not apply in private chats
+    chat = await context.bot.get_chat(group_id)
+    if chat.type == 'private':
+        return
+
     punishments_data = load_punishments_data()
     group_id_str = str(group_id)
 
@@ -715,6 +720,11 @@ def save_negative_tracker(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 async def check_for_negative_points(group_id, user_id, points, context: ContextTypes.DEFAULT_TYPE):
+    # Punishments do not apply in private chats
+    chat = await context.bot.get_chat(group_id)
+    if chat.type == 'private':
+        return
+
     if points < 0:
         tracker = load_negative_tracker()
         group_id_str = str(group_id)
@@ -4487,6 +4497,7 @@ if __name__ == '__main__':
         fallbacks=shared_game_setup_fallbacks,
         per_user=True,
         per_chat=False,
+        per_message=True,
     )
 
     opponent_game_setup_handler = ConversationHandler(
@@ -4495,6 +4506,7 @@ if __name__ == '__main__':
         fallbacks=shared_game_setup_fallbacks,
         per_user=True,
         per_chat=False,
+        per_message=True,
     )
 
     # Battleship placement handler
@@ -4504,7 +4516,10 @@ if __name__ == '__main__':
             BS_AWAITING_PLACEMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, bs_handle_placement)],
         },
         fallbacks=[CommandHandler('cancel', bs_placement_cancel)],
-        conversation_timeout=600  # 10 minutes to place all ships
+        conversation_timeout=600,  # 10 minutes to place all ships
+        per_user=True,
+        per_chat=False,
+        per_message=True,
     )
     app.add_handler(battleship_placement_handler)
 
