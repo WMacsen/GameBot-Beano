@@ -53,6 +53,8 @@ OWNER_ID = 123456789  # <--- CHANGE THIS to your own Telegram User ID
 ADMIN_DATA_FILE = 'admins.json'          # Stores admin/owner info
 TOD_DATA_FILE = 'truth_or_dare.json'     # Stores truths and dares per group
 ACTIVE_TOD_GAMES_FILE = 'active_tod_games.json' # Stores active truth or dare games
+MESSAGE_TIMERS_FILE = 'message_timers.json'     # Stores auto-deletion timer settings per group
+TRACKED_MESSAGES_FILE = 'tracked_messages.json' # Stores messages sent by the bot to be deleted
 
 
 # =========================
@@ -463,6 +465,82 @@ async def get_user_id_by_username(context, chat_id, username) -> str:
 
     logger.debug(f"Username {username} not found in cache or admin list for chat {chat_id}")
     return None
+
+
+# =================================
+# Message Timer Data Management
+# =================================
+def load_message_timers():
+    """Loads the message timer settings from file."""
+    if os.path.exists(MESSAGE_TIMERS_FILE):
+        with open(MESSAGE_TIMERS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_message_timers(data):
+    """Saves the message timer settings to file."""
+    with open(MESSAGE_TIMERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_tracked_messages():
+    """Loads the tracked messages from file."""
+    if os.path.exists(TRACKED_MESSAGES_FILE):
+        with open(TRACKED_MESSAGES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_tracked_messages(data):
+    """Saves the tracked messages to file."""
+    with open(TRACKED_MESSAGES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+async def _track_sent_message(message: telegram.Message):
+    """Helper function to track a message for potential deletion."""
+    if not message or message.chat.type == 'private':
+        return
+
+    timers = load_message_timers()
+    group_id_str = str(message.chat.id)
+
+    # Check if a timer is active for this group (duration > 0)
+    if timers.get(group_id_str, 0) > 0:
+        tracked_messages = load_tracked_messages()
+        if group_id_str not in tracked_messages:
+            tracked_messages[group_id_str] = []
+
+        tracked_messages[group_id_str].append({
+            'message_id': message.message_id,
+            'chat_id': message.chat.id,
+            'timestamp': time.time()
+        })
+        save_tracked_messages(tracked_messages)
+        logger.debug(f"Tracked message {message.message_id} in chat {message.chat.id} for deletion.")
+
+async def send_message_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, **kwargs):
+    """Sends a text message and tracks it."""
+    message = await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
+    await _track_sent_message(message)
+    return message
+
+async def send_photo_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, photo: str, **kwargs):
+    """Sends a photo and tracks it."""
+    message = await context.bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
+    await _track_sent_message(message)
+    return message
+
+async def send_video_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, video: str, **kwargs):
+    """Sends a video and tracks it."""
+    message = await context.bot.send_video(chat_id=chat_id, video=video, **kwargs)
+    await _track_sent_message(message)
+    return message
+
+async def send_voice_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, voice: str, **kwargs):
+    """Sends a voice message and tracks it."""
+    message = await context.bot.send_voice(chat_id=chat_id, voice=voice, **kwargs)
+    await _track_sent_message(message)
+    return message
+
 
 # =============================
 # Reward System Storage & Helpers
@@ -1361,7 +1439,8 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
     challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
     opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
-    await context.bot.send_message(
+    await send_message_and_track(
+        context,
         game['group_id'],
         f"Game between {challenger_name} and {opponent_name} has been cancelled due to inactivity. Both players lose their stakes.",
         parse_mode='HTML'
@@ -1371,27 +1450,27 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
     if challenger_stake:
         if challenger_stake['type'] == 'points':
             await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
-        else: # media
+        else:  # media
             caption = f"This was {challenger_name}'s stake from the cancelled game."
             if challenger_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption)
+                await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
             elif challenger_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption)
+                await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
             elif challenger_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption)
+                await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
 
     # Handle opponent's stake
     if opponent_stake:
         if opponent_stake['type'] == 'points':
             await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
-        else: # media
+        else:  # media
             caption = f"This was {opponent_name}'s stake from the cancelled game."
             if opponent_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption)
+                await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
             elif opponent_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption)
+                await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
             elif opponent_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption)
+                await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -1422,7 +1501,8 @@ async def handle_tod_timeout(context: ContextTypes.DEFAULT_TYPE, tod_game_id: st
     await add_user_points(int(group_id), user_id, -15, context)
 
     # Notify group
-    await context.bot.send_message(
+    await send_message_and_track(
+        context,
         chat_id=group_id,
         text=f"⏰ {display_name} ran out of time to provide proof for their {game['type']} and has been penalized 15 points.",
         parse_mode='HTML'
@@ -1465,6 +1545,45 @@ async def handle_tod_timeout(context: ContextTypes.DEFAULT_TYPE, tod_game_id: st
         del active_games[tod_game_id]
         await save_active_tod_games(active_games)
 
+async def delete_expired_messages(context: ContextTypes.DEFAULT_TYPE):
+    """Periodically checks for and deletes tracked messages that have expired."""
+    logger.debug("Running scheduled job: delete_expired_messages")
+    timers = load_message_timers()
+    tracked_messages = load_tracked_messages()
+
+    if not timers or not tracked_messages:
+        return
+
+    now = time.time()
+    # Create a copy of the items to avoid issues with modifying the dict while iterating
+    for group_id, messages in list(tracked_messages.items()):
+        timer_duration = timers.get(group_id)
+
+        # Skip if timer is disabled or not set for this group
+        if not timer_duration or timer_duration <= 0:
+            continue
+
+        messages_to_keep = []
+        for message in messages:
+            if now - message['timestamp'] > timer_duration:
+                try:
+                    await context.bot.delete_message(chat_id=message['chat_id'], message_id=message['message_id'])
+                    logger.info(f"Successfully deleted message {message['message_id']} from chat {message['chat_id']}.")
+                except Exception as e:
+                    # This can happen if the message was already deleted or the bot lacks permission.
+                    logger.warning(f"Failed to delete message {message['message_id']} from chat {message['chat_id']}: {e}")
+            else:
+                messages_to_keep.append(message)
+
+        if not messages_to_keep:
+            # If all messages for the group were deleted, remove the group key
+            del tracked_messages[group_id]
+        else:
+            tracked_messages[group_id] = messages_to_keep
+
+    save_tracked_messages(tracked_messages)
+
+
 async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
     """Periodically checks for inactive games and handles them."""
     now = time.time()
@@ -1495,7 +1614,8 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
             try:
                 challenger = await context.bot.get_chat_member(game['group_id'], game['challenger_id'])
                 opponent = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
-                await context.bot.send_message(
+                await send_message_and_track(
+                    context,
                     chat_id=game['group_id'],
                     text=f"Warning: The game between {challenger.user.mention_html()} and {opponent.user.mention_html()} will be cancelled in 2 minutes due to inactivity.",
                     parse_mode='HTML'
@@ -1524,7 +1644,8 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"ToD game {tod_game_id} inactive for 5 minutes. Sending warning.")
             try:
                 user = await context.bot.get_chat_member(tod_game['group_id'], tod_game['user_id'])
-                await context.bot.send_message(
+                await send_message_and_track(
+                    context,
                     chat_id=tod_game['group_id'],
                     text=f"Warning: {user.user.mention_html()}, you have 2 minutes left to provide proof for your {tod_game['type']}!",
                     parse_mode='HTML'
@@ -2727,12 +2848,12 @@ async def point_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Fetch and display points for the determined target
     points = get_user_points(group_id, target_user.id)
-    display_name = get_display_name(target_user.id, target_user.full_name, group_id)
+    display_name = get_display_name(target_user.id, target_user.full_name, int(group_id))
 
     if target_user.id == user.id:
-        await update.message.reply_text(f"You have {points} points.")
+        await send_message_and_track(context, update.effective_chat.id, f"You have {points} points.")
     else:
-        await update.message.reply_text(f"{display_name} has {points} points.", parse_mode='HTML')
+        await send_message_and_track(context, update.effective_chat.id, f"{display_name} has {points} points.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2773,6 +2894,7 @@ COMMAND_MAP = {
     'title': {'is_admin': True}, 'removetitle': {'is_admin': True},
     'update': {'is_admin': True}, 'viewstakes': {'is_admin': True},
     'game': {'is_admin': False}, 'dareme': {'is_admin': False}, 'addtod': {'is_admin': False}, 'managetod': {'is_admin': True},
+    'timer': {'is_admin': True}, 'notimer': {'is_admin': True},
 }
 
 @command_handler_wrapper(admin_only=False)
@@ -3118,6 +3240,71 @@ async def _create_tod_management_message(group_id: str, list_type: str, page: in
     return text, InlineKeyboardMarkup(keyboard)
 
 @command_handler_wrapper(admin_only=True)
+async def timer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /timer {minutes} - Sets the auto-delete timer for bot messages in this group. """
+    if update.effective_chat.type == "private":
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
+        return
+
+    if not context.args:
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /timer <minutes>\nUse 0 to disable the timer.")
+        return
+
+    try:
+        minutes = int(context.args[0])
+        if minutes < 0:
+            raise ValueError
+    except ValueError:
+        await send_message_and_track(context, update.effective_chat.id, "Please provide a valid, non-negative number of minutes.")
+        return
+
+    group_id = str(update.effective_chat.id)
+    timers = load_message_timers()
+
+    if minutes == 0:
+        timers[group_id] = 0
+        save_message_timers(timers)
+        await send_message_and_track(context, update.effective_chat.id, "Bot message auto-deletion has been disabled for this group.")
+    else:
+        timers[group_id] = minutes * 60
+        save_message_timers(timers)
+        await send_message_and_track(context, update.effective_chat.id, f"Bot messages in this group will now be deleted after {minutes} minute(s).")
+
+
+@command_handler_wrapper(admin_only=True)
+async def notimer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /notimer (as a reply) - Prevents a specific bot message from being auto-deleted. """
+    if not update.message.reply_to_message:
+        await send_message_and_track(context, update.effective_chat.id, "Please use this command as a reply to the message you want to keep.")
+        return
+
+    if update.message.reply_to_message.from_user.id != context.bot.id:
+        await send_message_and_track(context, update.effective_chat.id, "This command only works on messages sent by me.")
+        return
+
+    message_to_keep = update.message.reply_to_message
+    group_id_str = str(message_to_keep.chat.id)
+
+    tracked_messages = load_tracked_messages()
+
+    if group_id_str not in tracked_messages:
+        await send_message_and_track(context, update.effective_chat.id, "This message is not being tracked for deletion.")
+        return
+
+    initial_count = len(tracked_messages[group_id_str])
+    tracked_messages[group_id_str] = [
+        msg for msg in tracked_messages[group_id_str]
+        if msg['message_id'] != message_to_keep.message_id
+    ]
+
+    if len(tracked_messages[group_id_str]) == initial_count:
+        await send_message_and_track(context, update.effective_chat.id, "This message was not found in the deletion queue.")
+    else:
+        save_tracked_messages(tracked_messages)
+        await send_message_and_track(context, update.effective_chat.id, "Okay, I will not delete that message.")
+
+
+@command_handler_wrapper(admin_only=True)
 async def managetod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """(Admin) /managetod - Manage the list of truths and dares for this group."""
     if update.effective_chat.type not in ["group", "supergroup"]:
@@ -3336,7 +3523,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # In a group, just give a prompt to start a private chat.
     if update.effective_chat.type != "private":
-        await update.message.reply_text("Please message me in private to use /start.")
+        await send_message_and_track(context, update.effective_chat.id, "Please message me in private to use /start.")
         try:
             # Also send the welcome message privately if possible
             await context.bot.send_message(
@@ -3358,7 +3545,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Shows the interactive help menu.
     """
     if update.effective_chat.type != "private":
-        await update.message.reply_text("Please use the /help command in a private chat with me for a better experience.")
+        await send_message_and_track(context, update.effective_chat.id, "Please use the /help command in a private chat with me for a better experience.")
         return
 
     user_id = update.effective_user.id
@@ -3414,6 +3601,8 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = """
 <b>Admin Commands</b>
 
+- /timer &lt;minutes&gt;: Sets an auto-delete timer for the bot's messages in this group (0 to disable).
+- /notimer (reply to message): Prevents a specific bot message from being auto-deleted.
 - /title &lt;user_id&gt; &lt;title&gt;: Sets a custom title for a user.
 - /removetitle &lt;user_id&gt;: Removes a title from a user.
 - /update: (Owner only, in group) Adds all admins from the current group to the bot's global admin list.
@@ -4220,6 +4409,7 @@ async def post_init(application: Application) -> None:
     context = CallbackContext(application=application)
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_game_inactivity, 'interval', minutes=1, args=[context])
+    scheduler.add_job(delete_expired_messages, 'interval', minutes=1, args=[context])
     scheduler.start()
 
 
@@ -4260,6 +4450,8 @@ if __name__ == '__main__':
     add_command(app, 'dareme', dareme_command)
     add_command(app, 'addtod', addtod_command)
     add_command(app, 'managetod', managetod_command)
+    add_command(app, 'timer', timer_command)
+    add_command(app, 'notimer', notimer_command)
 
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
