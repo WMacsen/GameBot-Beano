@@ -49,12 +49,16 @@ BOT_USERNAME: Final = '@YourBotUsername'  # <--- CHANGE THIS to your bot's usern
 OWNER_ID = 123456789  # <--- CHANGE THIS to your own Telegram User ID
 # END IMPORTANT
 
+# Get the absolute path to the directory containing this script
+# This makes file paths independent of the current working directory
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+
 # File paths for persistent data storage
-ADMIN_DATA_FILE = 'admins.json'          # Stores admin/owner info
-TOD_DATA_FILE = 'truth_or_dare.json'     # Stores truths and dares per group
-ACTIVE_TOD_GAMES_FILE = 'active_tod_games.json' # Stores active truth or dare games
-MESSAGE_TIMERS_FILE = 'message_timers.json'     # Stores auto-deletion timer settings per group
-TRACKED_MESSAGES_FILE = 'tracked_messages.json' # Stores messages sent by the bot to be deleted
+ADMIN_DATA_FILE = os.path.join(BASE_DIR, 'admins.json')
+TOD_DATA_FILE = os.path.join(BASE_DIR, 'truth_or_dare.json')     # Stores truths and dares per group
+ACTIVE_TOD_GAMES_FILE = os.path.join(BASE_DIR, 'active_tod_games.json') # Stores active truth or dare games
+MESSAGE_TIMERS_FILE = os.path.join(BASE_DIR, 'message_timers.json')     # Stores auto-deletion timer settings per group
+TRACKED_MESSAGES_FILE = os.path.join(BASE_DIR, 'tracked_messages.json') # Stores messages sent by the bot to be deleted
 
 
 # =========================
@@ -113,7 +117,7 @@ def command_handler_wrapper(admin_only=False):
 # =============================
 # Admin/Owner Data Management
 # =============================
-USER_TITLES_FILE = 'user_titles.json'
+USER_TITLES_FILE = os.path.join(BASE_DIR, 'user_titles.json')
 
 def load_user_titles():
     if os.path.exists(USER_TITLES_FILE):
@@ -545,7 +549,7 @@ async def send_voice_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int,
 # =============================
 # Reward System Storage & Helpers
 # =============================
-REWARDS_DATA_FILE = 'rewards.json'  # Stores rewards per group
+REWARDS_DATA_FILE = os.path.join(BASE_DIR, 'rewards.json')  # Stores rewards per group
 
 DEFAULT_REWARD = {"name": "Other", "cost": 0}
 
@@ -601,7 +605,7 @@ def remove_reward(group_id, name):
 # =============================
 # Point System Storage & Helpers
 # =============================
-POINTS_DATA_FILE = 'points.json'  # Stores user points per group
+POINTS_DATA_FILE = os.path.join(BASE_DIR, 'points.json')  # Stores user points per group
 
 def load_points_data():
     if os.path.exists(POINTS_DATA_FILE):
@@ -707,7 +711,7 @@ async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAUL
 # =============================
 # Negative Points Tracker
 # =============================
-NEGATIVE_POINTS_TRACKER_FILE = 'negative_points_tracker.json'
+NEGATIVE_POINTS_TRACKER_FILE = os.path.join(BASE_DIR, 'negative_points_tracker.json')
 
 def load_negative_tracker():
     if os.path.exists(NEGATIVE_POINTS_TRACKER_FILE):
@@ -783,7 +787,7 @@ async def check_for_negative_points(group_id, user_id, points, context: ContextT
 # =============================
 # Chance Game Helpers
 # =============================
-CHANCE_COOLDOWNS_FILE = 'chance_cooldowns.json'
+CHANCE_COOLDOWNS_FILE = os.path.join(BASE_DIR, 'chance_cooldowns.json')
 
 def load_cooldowns():
     if os.path.exists(CHANCE_COOLDOWNS_FILE):
@@ -860,7 +864,7 @@ async def save_active_tod_games(data):
 # =============================
 # Game System Storage & Helpers
 # =============================
-GAMES_DATA_FILE = 'games.json'
+GAMES_DATA_FILE = os.path.join(BASE_DIR, 'games.json')
 GAMES_DATA_LOCK = asyncio.Lock()
 
 async def load_games_data_async():
@@ -2041,10 +2045,10 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
 # =============================
 # Punishment System Storage & Helpers
 # =============================
-PUNISHMENTS_DATA_FILE = 'punishments.json'
-PUNISHMENT_STATUS_FILE = 'punishment_status.json'
-MEDIA_STAKES_FILE = 'media_stakes.json'
-USER_PROFILES_FILE = 'user_profiles.json'
+PUNISHMENTS_DATA_FILE = os.path.join(BASE_DIR, 'punishments.json')
+PUNISHMENT_STATUS_FILE = os.path.join(BASE_DIR, 'punishment_status.json')
+MEDIA_STAKES_FILE = os.path.join(BASE_DIR, 'media_stakes.json')
+USER_PROFILES_FILE = os.path.join(BASE_DIR, 'user_profiles.json')
 
 def load_user_profiles():
     if os.path.exists(USER_PROFILES_FILE):
@@ -3439,7 +3443,7 @@ async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFA
 
 
 # Persistent storage for disabled commands per group
-DISABLED_COMMANDS_FILE = 'disabled_commands.json'
+DISABLED_COMMANDS_FILE = os.path.join(BASE_DIR, 'disabled_commands.json')
 
 def load_disabled_commands():
     if os.path.exists(DISABLED_COMMANDS_FILE):
