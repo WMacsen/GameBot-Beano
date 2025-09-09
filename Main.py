@@ -4505,7 +4505,8 @@ if __name__ == '__main__':
             TOD_PROOF: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VOICE, tod_handle_proof_submission)],
         },
         fallbacks=[CommandHandler('cancel', tod_cancel)],
-        per_message=True,
+        per_user=True,
+        per_chat=True,
     )
 
     # Separate conversation handlers for challenger and opponent to avoid state conflicts.
@@ -4531,8 +4532,7 @@ if __name__ == '__main__':
         states=shared_game_setup_states,
         fallbacks=shared_game_setup_fallbacks,
         per_user=True,
-        per_chat=False,
-        per_message=True,
+        per_chat=True,
     )
 
     opponent_game_setup_handler = ConversationHandler(
@@ -4540,8 +4540,7 @@ if __name__ == '__main__':
         states=shared_game_setup_states,
         fallbacks=shared_game_setup_fallbacks,
         per_user=True,
-        per_chat=False,
-        per_message=True,
+        per_chat=True,
     )
 
     # Battleship placement handler
@@ -4553,8 +4552,7 @@ if __name__ == '__main__':
         fallbacks=[CommandHandler('cancel', bs_placement_cancel)],
         conversation_timeout=600,  # 10 minutes to place all ships
         per_user=True,
-        per_chat=False,
-        per_message=True,
+        per_chat=True,
     )
     app.add_handler(tod_conversation_handler)
     app.add_handler(battleship_placement_handler)
