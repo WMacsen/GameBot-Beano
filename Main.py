@@ -55,10 +55,21 @@ BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # File paths for persistent data storage
 ADMIN_DATA_FILE = os.path.join(BASE_DIR, 'admins.json')
-TOD_DATA_FILE = os.path.join(BASE_DIR, 'truth_or_dare.json')     # Stores truths and dares per group
-ACTIVE_TOD_GAMES_FILE = os.path.join(BASE_DIR, 'active_tod_games.json') # Stores active truth or dare games
-MESSAGE_TIMERS_FILE = os.path.join(BASE_DIR, 'message_timers.json')     # Stores auto-deletion timer settings per group
-TRACKED_MESSAGES_FILE = os.path.join(BASE_DIR, 'tracked_messages.json') # Stores messages sent by the bot to be deleted
+TOD_DATA_FILE = os.path.join(BASE_DIR, 'truth_or_dare.json')
+ACTIVE_TOD_GAMES_FILE = os.path.join(BASE_DIR, 'active_tod_games.json')
+MESSAGE_TIMERS_FILE = os.path.join(BASE_DIR, 'message_timers.json')
+TRACKED_MESSAGES_FILE = os.path.join(BASE_DIR, 'tracked_messages.json')
+USER_TITLES_FILE = os.path.join(BASE_DIR, 'user_titles.json')
+REWARDS_DATA_FILE = os.path.join(BASE_DIR, 'rewards.json')
+POINTS_DATA_FILE = os.path.join(BASE_DIR, 'points.json')
+NEGATIVE_POINTS_TRACKER_FILE = os.path.join(BASE_DIR, 'negative_points_tracker.json')
+CHANCE_COOLDOWNS_FILE = os.path.join(BASE_DIR, 'chance_cooldowns.json')
+GAMES_DATA_FILE = os.path.join(BASE_DIR, 'games.json')
+PUNISHMENTS_DATA_FILE = os.path.join(BASE_DIR, 'punishments.json')
+PUNISHMENT_STATUS_FILE = os.path.join(BASE_DIR, 'punishment_status.json')
+MEDIA_STAKES_FILE = os.path.join(BASE_DIR, 'media_stakes.json')
+USER_PROFILES_FILE = os.path.join(BASE_DIR, 'user_profiles.json')
+DISABLED_COMMANDS_FILE = os.path.join(BASE_DIR, 'disabled_commands.json')
 
 
 # =========================
@@ -117,8 +128,6 @@ def command_handler_wrapper(admin_only=False):
 # =============================
 # Admin/Owner Data Management
 # =============================
-USER_TITLES_FILE = os.path.join(BASE_DIR, 'user_titles.json')
-
 def load_user_titles():
     if os.path.exists(USER_TITLES_FILE):
         with open(USER_TITLES_FILE, 'r', encoding='utf-8') as f:
@@ -549,8 +558,6 @@ async def send_voice_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int,
 # =============================
 # Reward System Storage & Helpers
 # =============================
-REWARDS_DATA_FILE = os.path.join(BASE_DIR, 'rewards.json')  # Stores rewards per group
-
 DEFAULT_REWARD = {"name": "Other", "cost": 0}
 
 def load_rewards_data():
@@ -605,8 +612,6 @@ def remove_reward(group_id, name):
 # =============================
 # Point System Storage & Helpers
 # =============================
-POINTS_DATA_FILE = os.path.join(BASE_DIR, 'points.json')  # Stores user points per group
-
 def load_points_data():
     if os.path.exists(POINTS_DATA_FILE):
         with open(POINTS_DATA_FILE, 'r', encoding='utf-8') as f:
@@ -711,8 +716,6 @@ async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAUL
 # =============================
 # Negative Points Tracker
 # =============================
-NEGATIVE_POINTS_TRACKER_FILE = os.path.join(BASE_DIR, 'negative_points_tracker.json')
-
 def load_negative_tracker():
     if os.path.exists(NEGATIVE_POINTS_TRACKER_FILE):
         with open(NEGATIVE_POINTS_TRACKER_FILE, 'r', encoding='utf-8') as f:
@@ -787,8 +790,6 @@ async def check_for_negative_points(group_id, user_id, points, context: ContextT
 # =============================
 # Chance Game Helpers
 # =============================
-CHANCE_COOLDOWNS_FILE = os.path.join(BASE_DIR, 'chance_cooldowns.json')
-
 def load_cooldowns():
     if os.path.exists(CHANCE_COOLDOWNS_FILE):
         with open(CHANCE_COOLDOWNS_FILE, 'r', encoding='utf-8') as f:
@@ -864,7 +865,6 @@ async def save_active_tod_games(data):
 # =============================
 # Game System Storage & Helpers
 # =============================
-GAMES_DATA_FILE = os.path.join(BASE_DIR, 'games.json')
 GAMES_DATA_LOCK = asyncio.Lock()
 
 async def load_games_data_async():
@@ -1091,7 +1091,7 @@ async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(
         chat_id=group_id,
-        text=f"{challenger_name} wants revenge against {opponent_name}! {challenger_name}, check your private messages to set up the game.",
+        text=f"{challenger_name} wants revenge against {opponent_name}! {challenger_name}, please check your private messages to set up the game.",
         parse_mode='HTML'
     )
 
@@ -2045,11 +2045,6 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
 # =============================
 # Punishment System Storage & Helpers
 # =============================
-PUNISHMENTS_DATA_FILE = os.path.join(BASE_DIR, 'punishments.json')
-PUNISHMENT_STATUS_FILE = os.path.join(BASE_DIR, 'punishment_status.json')
-MEDIA_STAKES_FILE = os.path.join(BASE_DIR, 'media_stakes.json')
-USER_PROFILES_FILE = os.path.join(BASE_DIR, 'user_profiles.json')
-
 def load_user_profiles():
     if os.path.exists(USER_PROFILES_FILE):
         with open(USER_PROFILES_FILE, 'r', encoding='utf-8') as f:
@@ -3015,27 +3010,42 @@ async def addtod_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add. You can send multiple in one message, just put each one on a new line.")
 
 
-@command_handler_wrapper(admin_only=False)
-async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tod_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancels the ToD conversation."""
+    if update.message:
+        await update.message.reply_text("Truth or Dare game cancelled.")
+    elif update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text("Truth or Dare game cancelled.")
+
+    tod_game_id = context.user_data.get('tod_game_id')
+    if tod_game_id:
+        active_games = await load_active_tod_games()
+        if tod_game_id in active_games:
+            del active_games[tod_game_id]
+            await save_active_tod_games(active_games)
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """ /dareme - Starts a game of Truth or Dare. """
     if update.effective_chat.type not in ["group", "supergroup"]:
         await update.message.reply_text("This command can only be used in group chats.")
-        return
+        return ConversationHandler.END
 
     active_games = await load_active_tod_games()
     user_id = update.effective_user.id
     group_id = str(update.effective_chat.id)
 
-    # Concurrency Check: Only checks for active ToD games (from active_tod_games.json).
-    # This does not block 2-player games, which are stored in a separate file.
     for game in active_games.values():
         if game.get('group_id') == group_id:
-            # Check if it's the same user to give a specific message
             if game.get('user_id') == user_id:
                 await update.message.reply_text("You already have an active truth or dare! Please complete or refuse it first.")
             else:
                 await update.message.reply_text("There is already an active Truth or Dare game in this group. Please wait for it to finish.")
-            return
+            return ConversationHandler.END
 
     keyboard = [
         [
@@ -3045,9 +3055,10 @@ async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"{update.effective_user.mention_html()}, pick your poison:", reply_markup=reply_markup, parse_mode='HTML')
+    return TOD_CHOICE
 
 
-async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the user's choice of Truth or Dare."""
     query = update.callback_query
     await query.answer()
@@ -3056,12 +3067,12 @@ async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         _, _, choice, intended_user_id = query.data.split(':')
     except ValueError:
         logger.error(f"Could not parse tod_choice_handler callback data: {query.data}")
-        return
+        return ConversationHandler.END
 
     user = query.from_user
     if str(user.id) != intended_user_id:
         await query.answer("This is not for you!", show_alert=True)
-        return
+        return TOD_CHOICE
 
     group_id = str(query.message.chat.id)
     tod_data = await load_tod_data()
@@ -3071,11 +3082,12 @@ async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if not item_list:
         await query.edit_message_text(f"There are no {choice}s in the list for this group! Anyone can add some with /addtod.")
-        return
+        return ConversationHandler.END
 
     selected_item = random.choice(item_list)
 
     tod_game_id = str(uuid.uuid4())
+    context.user_data['tod_game_id'] = tod_game_id
 
     text = f"{user.mention_html()}, your {choice} is:\n\n<b>{html.escape(selected_item)}</b>"
 
@@ -3101,11 +3113,10 @@ async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "status": "pending_acceptance"
     }
     await save_active_tod_games(active_games)
+    return TOD_ACCEPTANCE
 
 
-
-
-async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the user refusing a truth or dare."""
     query = update.callback_query
 
@@ -3114,7 +3125,7 @@ async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except ValueError:
         logger.error(f"Could not parse tod_refuse_handler callback data: {query.data}")
         await query.answer("An error occurred.", show_alert=True)
-        return
+        return ConversationHandler.END
 
     active_games = await load_active_tod_games()
     game = active_games.get(tod_game_id)
@@ -3125,11 +3136,11 @@ async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass # Message might be gone
-        return
+        return ConversationHandler.END
 
     if query.from_user.id != game['user_id']:
         await query.answer("This is not your dare to refuse!", show_alert=True)
-        return
+        return TOD_ACCEPTANCE
 
     await query.answer()
 
@@ -3162,9 +3173,10 @@ async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     del active_games[tod_game_id]
     await save_active_tod_games(active_games)
+    return ConversationHandler.END
 
 
-async def tod_start_proof_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tod_start_proof_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the user accepting to provide proof for a truth or dare."""
     query = update.callback_query
 
@@ -3173,7 +3185,7 @@ async def tod_start_proof_handler(update: Update, context: ContextTypes.DEFAULT_
     except ValueError:
         logger.error(f"Could not parse tod_start_proof_handler callback data: {query.data}")
         await query.answer("An error occurred.", show_alert=True)
-        return
+        return ConversationHandler.END
 
     active_games = await load_active_tod_games()
     game = active_games.get(tod_game_id)
@@ -3184,11 +3196,11 @@ async def tod_start_proof_handler(update: Update, context: ContextTypes.DEFAULT_
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
-        return
+        return ConversationHandler.END
 
     if query.from_user.id != game['user_id']:
         await query.answer("This is not your dare to accept!", show_alert=True)
-        return
+        return TOD_ACCEPTANCE
 
     game['status'] = 'awaiting_proof'
     game['timestamp'] = time.time()
@@ -3207,6 +3219,7 @@ async def tod_start_proof_handler(update: Update, context: ContextTypes.DEFAULT_
 
     await query.edit_message_text(new_text, reply_markup=None, parse_mode='HTML')
     await query.answer("Please send your proof.")
+    return TOD_PROOF
 
 
 async def _create_tod_management_message(group_id: str, list_type: str, page: int = 0):
@@ -3387,9 +3400,10 @@ async def manage_tod_done_handler(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text("Management session finished.")
 
 
-async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles a user's message to see if it's a valid proof for an active T-or-D game."""
-    if not update.message: return
+    if not update.message:
+        return TOD_PROOF
 
     user = update.effective_user
     chat_id = str(update.effective_chat.id)
@@ -3406,7 +3420,10 @@ async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFA
             break
 
     if not game_to_complete_id:
-        return
+        # This message is not part of an active ToD game for this user, so we ignore it.
+        # By returning a state, we stay in the conversation, but this handler won't be triggered again for this message.
+        # This case should ideally not be hit if the conversation handler is working correctly.
+        return TOD_PROOF
 
     is_valid_proof = False
     if game_details['type'] == 'dare' and (message.photo or message.video):
@@ -3437,14 +3454,15 @@ async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFA
 
         del active_games[game_to_complete_id]
         await save_active_tod_games(active_games)
+        context.user_data.clear()
+        return ConversationHandler.END
     else:
         expected_proof = "a photo or video" if game_details['type'] == 'dare' else "a text message or voice note"
         await message.reply_text(f"That's not the right kind of proof for a {game_details['type']}. Please send {expected_proof}.")
+        return TOD_PROOF
 
 
 # Persistent storage for disabled commands per group
-DISABLED_COMMANDS_FILE = os.path.join(BASE_DIR, 'disabled_commands.json')
-
 def load_disabled_commands():
     if os.path.exists(DISABLED_COMMANDS_FILE):
         with open(DISABLED_COMMANDS_FILE, 'r', encoding='utf-8') as f:
@@ -3678,6 +3696,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # Game Setup Conversation
 # =============================
 GAME_SELECTION, ROUND_SELECTION, STAKE_TYPE_SELECTION, STAKE_SUBMISSION_POINTS, STAKE_SUBMISSION_MEDIA, OPPONENT_SELECTION, CONFIRMATION, FREE_REWARD_SELECTION, ASK_TASK_TARGET, ASK_TASK_DESCRIPTION = range(10)
+
+# States for the Truth or Dare conversation
+TOD_CHOICE, TOD_ACCEPTANCE, TOD_PROOF = range(10, 13)
 
 
 async def start_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -4461,7 +4482,6 @@ if __name__ == '__main__':
     add_command(app, 'removetitle', removetitle_command)
     add_command(app, 'update', update_command)
     add_command(app, 'viewstakes', viewstakes_command)
-    add_command(app, 'dareme', dareme_command)
     add_command(app, 'addtod', addtod_command)
     add_command(app, 'managetod', managetod_command)
     add_command(app, 'timer', timer_command)
@@ -4470,12 +4490,23 @@ if __name__ == '__main__':
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
 
-    # Handler for truth/dare proof submission
-    # Note: The parentheses around the first filter group are crucial to ensure correct operator precedence.
-    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VOICE) & ~filters.COMMAND, tod_handle_proof_submission), group=0)
-
     # Add the unknown command handler with a low priority to catch anything not handled yet
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler), group=1)
+
+    # Truth or Dare conversation handler
+    tod_conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler('dareme', dareme_command)],
+        states={
+            TOD_CHOICE: [CallbackQueryHandler(tod_choice_handler, pattern=r'^tod:choice:.*')],
+            TOD_ACCEPTANCE: [
+                CallbackQueryHandler(tod_start_proof_handler, pattern=r'^tod:start_proof:.*'),
+                CallbackQueryHandler(tod_refuse_handler, pattern=r'^tod:refuse:.*')
+            ],
+            TOD_PROOF: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VOICE, tod_handle_proof_submission)],
+        },
+        fallbacks=[CommandHandler('cancel', tod_cancel)],
+        per_message=True,
+    )
 
     # Separate conversation handlers for challenger and opponent to avoid state conflicts.
     shared_game_setup_states = {
@@ -4525,8 +4556,8 @@ if __name__ == '__main__':
         per_chat=False,
         per_message=True,
     )
+    app.add_handler(tod_conversation_handler)
     app.add_handler(battleship_placement_handler)
-
     app.add_handler(challenger_game_setup_handler)
     app.add_handler(opponent_game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
