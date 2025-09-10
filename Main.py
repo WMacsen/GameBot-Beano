@@ -2671,6 +2671,55 @@ async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await save_games_data_async(games_data)
     await delete_tracked_messages(context, active_game_id)
 
+
+@command_handler_wrapper(admin_only=True)
+async def stopdare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /stopdare - (Admin only) Manually stops the current Truth or Dare game in the group. """
+    if update.effective_chat.type not in ['group', 'supergroup']:
+        await update.message.reply_text("This command can only be used in a group.")
+        return
+
+    group_id = str(update.effective_chat.id)
+    active_games = await load_active_tod_games()
+
+    active_tod_game_id = None
+    active_tod_game = None
+    for game_id, game in active_games.items():
+        if game.get('group_id') == group_id:
+            active_tod_game_id = game_id
+            active_tod_game = game
+            break
+
+    if not active_tod_game_id:
+        await update.message.reply_text("There is no active Truth or Dare game in this group to stop.")
+        return
+
+    user_id = active_tod_game['user_id']
+    user_member = await context.bot.get_chat_member(group_id, user_id)
+    display_name = get_display_name(user_id, user_member.user.full_name, int(group_id))
+
+    await context.bot.send_message(
+        chat_id=group_id,
+        text=f"The Truth or Dare for {display_name} has been manually stopped by an admin.",
+        parse_mode='HTML'
+    )
+
+    # Clean up the game
+    try:
+        original_text = f"This {active_tod_game['type']} was manually stopped by an admin:\n\n<i>{html.escape(active_tod_game['text'])}</i>"
+        await context.bot.edit_message_text(
+            chat_id=active_tod_game['chat_id'],
+            message_id=active_tod_game['message_id'],
+            text=original_text,
+            reply_markup=None,
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.error(f"Could not edit original ToD message after admin stop: {e}")
+
+    del active_games[active_tod_game_id]
+    await save_active_tod_games(active_games)
+
 from datetime import datetime
 
 @command_handler_wrapper(admin_only=False)
@@ -2927,7 +2976,7 @@ COMMAND_MAP = {
     'command': {'is_admin': False}, 'disable': {'is_admin': True}, 'enable': {'is_admin': True}, 'addreward': {'is_admin': True},
     'removereward': {'is_admin': True}, 'addpunishment': {'is_admin': True},
     'removepunishment': {'is_admin': True}, 'punishment': {'is_admin': True},
-    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True}, 'stopgame': {'is_admin': True},
+    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True}, 'stopgame': {'is_admin': True}, 'stopdare': {'is_admin': True},
     'chance': {'is_admin': False}, 'reward': {'is_admin': False}, 'cancel': {'is_admin': False},
     'addpoints': {'is_admin': True}, 'removepoints': {'is_admin': True},
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
@@ -3650,6 +3699,8 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 <b>Game Commands</b>
 - /newgame (reply to user): Challenge someone to a game of Dice, Connect Four, Battleship, or Tic-Tac-Toe.
 - /chance: Play a daily game of chance for points or other outcomes.
+- /dareme: Starts a solo game of Truth or Dare.
+- /addtod: Contribute new questions to the Truth or Dare list.
         """
     elif topic == 'help_points':
         text = """
@@ -3672,6 +3723,8 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 - /removeadmin &lt;user_id&gt;: (Owner only) Removes a user from the bot's global admin list.
 - /viewstakes &lt;user_id or @username&gt;: (Private chat only) View all media staked by a user.
 - /loser &lt;user_id&gt;: Declare a user as the loser of the current game.
+- /stopgame: Manually stops the current 2-player game in the group.
+- /stopdare: Manually stops the current Truth or Dare game in the group.
 - /cleangames: Cleans up old, completed game data.
 - /top5: See the top 5 users with the most points.
 - /addpoints &lt;user_id&gt; &lt;amount&gt;: Add points to a user.
@@ -4522,6 +4575,7 @@ if __name__ == '__main__':
     add_command(app, 'newgame', newgame_command)
     add_command(app, 'loser', loser_command)
     add_command(app, 'stopgame', stopgame_command)
+    add_command(app, 'stopdare', stopdare_command)
     add_command(app, 'cleangames', cleangames_command)
     add_command(app, 'chance', chance_command)
     add_command(app, 'reward', reward_command)
