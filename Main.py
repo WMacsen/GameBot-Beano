@@ -1073,6 +1073,18 @@ async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenger_user = await context.bot.get_chat_member(group_id, loser_id)
     opponent_user = await context.bot.get_chat_member(group_id, winner_id)
 
+    # Carry over stakes from the previous game
+    if str(old_game['challenger_id']) == str(loser_id):
+        challenger_stake = old_game.get('challenger_stake')
+        opponent_stake = old_game.get('opponent_stake')
+    else: # old loser was the opponent
+        challenger_stake = old_game.get('opponent_stake')
+        opponent_stake = old_game.get('challenger_stake')
+
+    if not challenger_stake or not opponent_stake:
+        await query.edit_message_text("Could not find the stakes from the original game. Cannot start a revenge match.")
+        return
+
     game_id = str(uuid.uuid4())
     games_data[game_id] = {
         "group_id": group_id,
@@ -1081,6 +1093,8 @@ async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "is_revenge": True,
         "old_game_id": old_game_id,
         "status": "pending_game_selection",
+        "challenger_stake": challenger_stake,
+        "opponent_stake": opponent_stake,
         "messages_to_delete": [],
         "last_activity": time.time()
     }
@@ -1089,9 +1103,9 @@ async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenger_name = get_display_name(challenger_user.user.id, challenger_user.user.full_name, group_id)
     opponent_name = get_display_name(opponent_user.user.id, opponent_user.user.full_name, group_id)
 
-    await context.bot.send_message(
-        chat_id=group_id,
-        text=f"{challenger_name} wants revenge against {opponent_name}! {challenger_name}, please check your private messages to set up the game.",
+    await query.edit_message_reply_markup(reply_markup=None)
+    await query.message.reply_text(
+        f"{challenger_name} is plotting revenge against {opponent_name}! The same stakes are on the line.",
         parse_mode='HTML'
     )
 
@@ -1102,13 +1116,11 @@ async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context,
             challenger_user.user.id,
             game_id,
-            "Let's set up your revenge! Click the button below to begin.",
+            "Let's set up your revenge! The stakes from your last game have been carried over. Please select a new game type to play.",
             reply_markup=reply_markup
         )
     except Exception:
         logger.exception(f"Failed to send private message to user {challenger_user.user.id}")
-
-    await query.edit_message_reply_markup(reply_markup=None)
 
 
 async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1225,7 +1237,7 @@ def check_tictactoe_draw(board: list) -> bool:
     return all(cell != 0 for row in board for cell in row)
 
 async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
-    """Handles a draw, where both players lose their stakes."""
+    """Handles a draw, where both players lose their stakes, ensuring both penalties are processed."""
     games_data = await load_games_data_async()
     game = games_data[game_id]
 
@@ -1246,42 +1258,42 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     )
 
     # Handle challenger's stake
-    if challenger_stake:
-        if challenger_stake['type'] == 'points':
-            points_val = challenger_stake['value']
-            await add_user_points(game['group_id'], challenger_id, -points_val, context)
-            await context.bot.send_message(
-                game['group_id'],
-                f"{challenger_name} lost {points_val} points in the draw.",
-                parse_mode='HTML'
-            )
-        else: # media
-            caption = f"This was {challenger_name}'s stake from the drawn game."
-            if challenger_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
-            elif challenger_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
-            elif challenger_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+    try:
+        if challenger_stake:
+            if challenger_stake['type'] == 'points':
+                points_val = challenger_stake['value']
+                await add_user_points(game['group_id'], challenger_id, -points_val, context)
+                await context.bot.send_message(game['group_id'], f"{challenger_name} lost {points_val} points in the draw.", parse_mode='HTML')
+            else:  # media
+                caption = f"This was {challenger_name}'s stake from the drawn game."
+                if challenger_stake['type'] == 'photo':
+                    await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                elif challenger_stake['type'] == 'video':
+                    await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                elif challenger_stake['type'] == 'voice':
+                    await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"Failed to process challenger's stake in draw for game {game_id}: {e}")
+        await context.bot.send_message(game['group_id'], f"Could not process {challenger_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     # Handle opponent's stake
-    if opponent_stake:
-        if opponent_stake['type'] == 'points':
-            points_val = opponent_stake['value']
-            await add_user_points(game['group_id'], opponent_id, -points_val, context)
-            await context.bot.send_message(
-                game['group_id'],
-                f"{opponent_name} lost {points_val} points in the draw.",
-                parse_mode='HTML'
-            )
-        else: # media
-            caption = f"This was {opponent_name}'s stake from the drawn game."
-            if opponent_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
-            elif opponent_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
-            elif opponent_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+    try:
+        if opponent_stake:
+            if opponent_stake['type'] == 'points':
+                points_val = opponent_stake['value']
+                await add_user_points(game['group_id'], opponent_id, -points_val, context)
+                await context.bot.send_message(game['group_id'], f"{opponent_name} lost {points_val} points in the draw.", parse_mode='HTML')
+            else:  # media
+                caption = f"This was {opponent_name}'s stake from the drawn game."
+                if opponent_stake['type'] == 'photo':
+                    await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                elif opponent_stake['type'] == 'video':
+                    await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                elif opponent_stake['type'] == 'voice':
+                    await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"Failed to process opponent's stake in draw for game {game_id}: {e}")
+        await context.bot.send_message(game['group_id'], f"Could not process {opponent_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -1461,30 +1473,39 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
     )
 
     # Handle challenger's stake
-    if challenger_stake:
-        if challenger_stake['type'] == 'points':
-            await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
-        else:  # media
-            caption = f"This was {challenger_name}'s stake from the cancelled game."
-            if challenger_stake['type'] == 'photo':
-                await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
-            elif challenger_stake['type'] == 'video':
-                await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
-            elif challenger_stake['type'] == 'voice':
-                await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+    try:
+        if challenger_stake:
+            if challenger_stake['type'] == 'points':
+                await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
+            else:  # media
+                caption = f"This was {challenger_name}'s stake from the cancelled game."
+                if challenger_stake['type'] == 'photo':
+                    await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                elif challenger_stake['type'] == 'video':
+                    await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                elif challenger_stake['type'] == 'voice':
+                    await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+    except Exception as e:
+        logger.error(f"Failed to process challenger's stake in cancellation for game {game_id}: {e}")
+        await send_message_and_track(context, game['group_id'], f"Could not process {challenger_name}'s stake due to an error.", parse_mode='HTML')
+
 
     # Handle opponent's stake
-    if opponent_stake:
-        if opponent_stake['type'] == 'points':
-            await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
-        else:  # media
-            caption = f"This was {opponent_name}'s stake from the cancelled game."
-            if opponent_stake['type'] == 'photo':
-                await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
-            elif opponent_stake['type'] == 'video':
-                await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
-            elif opponent_stake['type'] == 'voice':
-                await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+    try:
+        if opponent_stake:
+            if opponent_stake['type'] == 'points':
+                await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
+            else:  # media
+                caption = f"This was {opponent_name}'s stake from the cancelled game."
+                if opponent_stake['type'] == 'photo':
+                    await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                elif opponent_stake['type'] == 'video':
+                    await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                elif opponent_stake['type'] == 'voice':
+                    await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+    except Exception as e:
+        logger.error(f"Failed to process opponent's stake in cancellation for game {game_id}: {e}")
+        await send_message_and_track(context, game['group_id'], f"Could not process {opponent_name}'s stake due to an error.", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -2551,9 +2572,19 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception:
         logger.exception(f"Failed to send private message to user {challenger_user.id}")
+        # Clean up the game data to prevent a limbo game
+        games_data = await load_games_data_async()
+        if game_id in games_data:
+            await delete_tracked_messages(context, game_id)
+            del games_data[game_id]
+            await save_games_data_async(games_data)
+            logger.info(f"Cleaned up limbo game {game_id} due to PM failure.")
+
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="I couldn't send you a private message. Please make sure you have started a chat with me privately first."
+            text=f"{challenger_user.mention_html()}, I couldn't send you a private message to set up the game. "
+                 f"Please make sure you have started a chat with me privately first. The challenge has been cancelled.",
+            parse_mode='HTML'
         )
 
 @command_handler_wrapper(admin_only=True)
@@ -3730,21 +3761,38 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     _, game_type, game_id = query.data.split(':')
     await update_game_activity(game_id)
     games_data = await load_games_data_async()
-    games_data[game_id]['game_type'] = game_type
+    game = games_data[game_id]
+    game['game_type'] = game_type
 
     if game_type == 'connect_four':
-        # Initialize Connect Four board (6 rows, 7 columns)
-        games_data[game_id]['board'] = [[0 for _ in range(7)] for _ in range(6)]
-        # Challenger goes first
-        games_data[game_id]['turn'] = games_data[game_id]['challenger_id']
+        game['board'] = [[0 for _ in range(7)] for _ in range(6)]
+        game['turn'] = game['challenger_id']
     elif game_type == 'tictactoe':
-        # Initialize Tic-Tac-Toe board (3x3)
-        games_data[game_id]['board'] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
-        # Challenger (X) goes first
-        games_data[game_id]['turn'] = games_data[game_id]['challenger_id']
+        game['board'] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+        game['turn'] = game['challenger_id']
 
     await save_games_data_async(games_data)
 
+    # If it's a revenge game, stakes are carried over, so skip stake selection.
+    if game.get('is_revenge'):
+        if game_type == 'dice':
+            # Still need to select rounds for dice game
+            keyboard = [
+                [InlineKeyboardButton("Best of 3", callback_data=f'rounds:3:{game_id}')],
+                [InlineKeyboardButton("Best of 5", callback_data=f'rounds:5:{game_id}')],
+                [InlineKeyboardButton("Best of 9", callback_data=f'rounds:9:{game_id}')],
+                [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text="How many rounds would you like to play?", reply_markup=reply_markup)
+            return ROUND_SELECTION
+        else:
+            # For other games, proceed directly to confirmation
+            context.user_data['player_role'] = 'challenger'
+            await show_confirmation(update, context)
+            return CONFIRMATION
+
+    # Standard flow for non-revenge games
     if game_type == 'dice':
         keyboard = [
             [InlineKeyboardButton("Best of 3", callback_data=f'rounds:3:{game_id}')],
@@ -3753,23 +3801,16 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            text="How many rounds would you like to play?",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text(text="How many rounds would you like to play?", reply_markup=reply_markup)
         return ROUND_SELECTION
     else:
-        # Placeholder for other games
         keyboard = [
             [InlineKeyboardButton("Points", callback_data=f'stake:points:{game_id}')],
             [InlineKeyboardButton("Media (Photo, Video, Voice Note)", callback_data=f'stake:media:{game_id}')],
             [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            text="What would you like to stake?",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text(text="What would you like to stake?", reply_markup=reply_markup)
         return STAKE_TYPE_SELECTION
 
 async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -3782,9 +3823,17 @@ async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     context.user_data['game_id'] = game_id
     games_data = await load_games_data_async()
-    games_data[game_id]['rounds_to_play'] = rounds
+    game = games_data[game_id]
+    game['rounds_to_play'] = rounds
     await save_games_data_async(games_data)
 
+    # If it's a revenge game, stakes are already set, so skip to confirmation.
+    if game.get('is_revenge'):
+        context.user_data['player_role'] = 'challenger'
+        await show_confirmation(update, context)
+        return CONFIRMATION
+
+    # Standard flow for non-revenge games
     keyboard = [
         [InlineKeyboardButton("Points", callback_data=f'stake:points:{game_id}')],
         [InlineKeyboardButton("Media (Photo, Video, Voice Note)", callback_data=f'stake:media:{game_id}')],
@@ -4260,6 +4309,11 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
         return
 
     if response_type == 'accept':
+        if game.get('is_revenge'):
+            await query.edit_message_text("Revenge challenge accepted! The game will now begin in the group chat.")
+            await start_game(context, game_id)
+            return
+
         game['status'] = 'pending_opponent_stake'
         await save_games_data_async(games_data)
 
@@ -4277,65 +4331,63 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
             )
         except telegram.error.Forbidden:
             opponent_member = await context.bot.get_chat_member(game['group_id'], user_id)
-            bot_username = context.bot.username
-            await context.bot.send_message(
-                chat_id=game['group_id'],
-                text=f'{opponent_member.user.mention_html()}, I can\'t send you a private message because you haven\'t started a chat with me. '
-                     f'Please <a href="https://t.me/{bot_username}">start a chat with me</a> and then click \'Accept\' on the challenge again.',
-                parse_mode='HTML'
+            bot_username = (await context.bot.get_me()).username
+
+            # Edit the original challenge message to reflect cancellation
+            await query.edit_message_text(
+                f"Challenge accepted by {opponent_member.user.mention_html()}, but the game has been cancelled. "
+                f"{opponent_member.user.mention_html()}, I can't send you a private message. "
+                f'Please <a href="https://t.me/{bot_username}">start a chat with me</a> before accepting challenges.',
+                parse_mode='HTML',
+                reply_markup=None
             )
+
+            # Clean up the game to prevent limbo state (no-fault cancellation)
+            # Note: We are modifying the `games_data` dictionary directly.
+            game['status'] = 'complete'
+            await save_games_data_async(games_data)
+            await delete_tracked_messages(context, game_id)
+            logger.info(f"Cleaned up limbo game {game_id} due to opponent PM failure.")
 
     elif response_type == 'refuse':
         if game.get('is_revenge'):
-            # --- Revenge Refusal Logic ---
-            old_game_id = game.get('old_game_id')
-            if not old_game_id or old_game_id not in games_data:
-                # Fallback if old game data is missing
-                refuser_name = get_display_name(game['opponent_id'], update.effective_user.full_name, game['group_id'])
-                await context.bot.send_message(
-                    chat_id=game['group_id'],
-                    text=f"{refuser_name} has refused the revenge match, but the original game data was not found.",
-                    parse_mode='HTML'
-                )
-            else:
-                old_game = games_data[old_game_id]
-                refuser_id = old_game['winner_id']
-                challenger_id = old_game['loser_id']
+            # --- Revenge Refusal Logic (simplified) ---
+            refuser_id = game['opponent_id']
+            challenger_id = game['challenger_id']
+            # The refuser's stake is their opponent_stake in the revenge game object
+            refuser_stake = game.get('opponent_stake')
 
-                # Determine the refuser's stake from the old game
-                refuser_stake = old_game.get('challenger_stake') if str(old_game['challenger_id']) == str(refuser_id) else old_game.get('opponent_stake')
+            refuser_member = await context.bot.get_chat_member(game['group_id'], refuser_id)
+            challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
+            refuser_name = get_display_name(refuser_id, refuser_member.user.full_name, game['group_id'])
+            challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
 
-                refuser_member = await context.bot.get_chat_member(game['group_id'], refuser_id)
-                challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
-                refuser_name = get_display_name(refuser_id, refuser_member.user.full_name, game['group_id'])
-                challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
-
-                if refuser_stake:
-                    if refuser_stake['type'] == 'points':
-                        points_val = refuser_stake['value']
-                        await add_user_points(game['group_id'], challenger_id, points_val, context)
-                        await add_user_points(game['group_id'], refuser_id, -points_val, context)
-                        await context.bot.send_message(
-                            game['group_id'],
-                            f"{refuser_name} has refused the revenge match and forfeited {points_val} points to {challenger_name}!",
-                            parse_mode='HTML'
-                        )
-                    else: # media
-                        media_type = refuser_stake['type']
-                        file_id = refuser_stake['value']
-                        caption = f"{refuser_name} has refused the revenge match and forfeited their stake to {challenger_name}!"
-                        if media_type == 'photo':
-                            await context.bot.send_photo(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                        elif media_type == 'video':
-                            await context.bot.send_video(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                        elif media_type == 'voice':
-                            await context.bot.send_voice(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                else:
-                     await context.bot.send_message(
+            if refuser_stake:
+                if refuser_stake['type'] == 'points':
+                    points_val = refuser_stake['value']
+                    await add_user_points(game['group_id'], challenger_id, points_val, context)
+                    await add_user_points(game['group_id'], refuser_id, -points_val, context)
+                    await context.bot.send_message(
                         game['group_id'],
-                        f"{refuser_name} has refused the revenge match, but no stake was found in the original game.",
+                        f"{refuser_name} has refused the revenge match and forfeited {points_val} points to {challenger_name}!",
                         parse_mode='HTML'
                     )
+                else: # media
+                    media_type = refuser_stake['type']
+                    file_id = refuser_stake['value']
+                    caption = f"{refuser_name} has refused the revenge match and forfeited their stake to {challenger_name}!"
+                    if media_type == 'photo':
+                        await context.bot.send_photo(game['group_id'], file_id, caption=caption, parse_mode='HTML')
+                    elif media_type == 'video':
+                        await context.bot.send_video(game['group_id'], file_id, caption=caption, parse_mode='HTML')
+                    elif media_type == 'voice':
+                        await context.bot.send_voice(game['group_id'], file_id, caption=caption, parse_mode='HTML')
+            else:
+                 await context.bot.send_message(
+                    game['group_id'],
+                    f"{refuser_name} has refused the revenge match, but no stake was found to forfeit.",
+                    parse_mode='HTML'
+                )
 
             # Clean up the revenge game
             del games_data[game_id]
