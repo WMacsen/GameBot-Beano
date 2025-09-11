@@ -2315,7 +2315,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             try:
                 await context.bot.send_message(
                     chat_id=admin.user.id,
-                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) just bought the reward: '{reward['name']}' for {reward['cost']} points."
+                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) just bought the reward: '{reward['name']}' for {reward['cost']} points.",
+                    parse_mode='HTML'
                 )
             except Exception:
                 logger.warning(f"Failed to notify admin {admin.user.id} about reward purchase.")
@@ -2370,7 +2371,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             try:
                 await context.bot.send_message(
                     chat_id=admin.user.id,
-                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) claimed the free reward: '{reward['name']}'."
+                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) claimed the free reward: '{reward['name']}'.",
+                    parse_mode='HTML'
                 )
             except Exception:
                 logger.warning(f"Failed to notify admin {admin.user.id} about free reward.")
