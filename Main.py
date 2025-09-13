@@ -953,7 +953,7 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
                 logger.error(f"Deletion of message {msg['message_id']} returned False but did not raise exception.")
         except Exception as e:
             logger.error(f"Explicitly failed to delete message {msg['message_id']}", exc_info=True)
-        await asyncio.sleep(0.5) # Add a small delay to avoid rate limiting
+        await asyncio.sleep(1.1) # Add a small delay to avoid rate limiting
 
     if game_id in games_data:
         games_data[game_id]['messages_to_delete'] = []
@@ -989,14 +989,6 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
     loser_name = get_display_name(loser_id, loser_member.user.full_name, game['group_id'])
     winner_name = get_display_name(winner_id, winner_member.user.full_name, game['group_id'])
 
-    # Store winner and loser IDs for the revenge handler
-    game['winner_id'] = winner_id
-    game['loser_id'] = loser_id
-
-    # Add a revenge button with shortened callback_data
-    keyboard = [[InlineKeyboardButton("Revenge 😈", callback_data=f"game:revenge:{game_id}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     if loser_stake['type'] == 'points':
         points_val = loser_stake['value']
         await add_user_points(game['group_id'], winner_id, points_val, context)
@@ -1006,17 +998,16 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
             context,
             game['group_id'],
             message,
-            parse_mode='HTML',
-            reply_markup=reply_markup
+            parse_mode='HTML'
         )
     else:  # media
         caption = f"{winner_name} won the game! This is the loser's stake from {loser_name}."
         if loser_stake['type'] == 'photo':
-            await send_photo_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
+            await send_photo_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'video':
-            await send_video_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
+            await send_video_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'voice':
-            await send_voice_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
+            await send_voice_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
 
     # Private messages to players (Battleship only)
     if game.get('game_type') == 'battleship':
@@ -1033,103 +1024,6 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
     game['status'] = 'complete'
     await save_games_data_async(games_data)
     await delete_tracked_messages(context, game_id)
-
-
-async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the revenge button click, allowing a loser to start a new game."""
-    query = update.callback_query
-    await query.answer()
-
-    try:
-        _, _, old_game_id = query.data.split(':')
-    except (ValueError, IndexError):
-        logger.error(f"Could not parse revenge callback data: {query.data}")
-        await query.edit_message_text("An error occurred while processing the revenge request.")
-        return
-
-    games_data = await load_games_data_async()
-    old_game = games_data.get(old_game_id)
-    if not old_game:
-        await query.edit_message_text("The original game data could not be found. It might be too old.")
-        return
-
-    loser_id = old_game.get('loser_id')
-    winner_id = old_game.get('winner_id')
-
-    if not loser_id or not winner_id:
-        await query.edit_message_text("The original game data is missing winner/loser information and a revenge match cannot be started.")
-        return
-
-    if query.from_user.id != loser_id:
-        await query.answer("This is not your revenge to claim!", show_alert=True)
-        return
-
-    group_id = old_game['group_id']
-
-    for game in games_data.values():
-        if game.get('group_id') == group_id and game.get('status') != 'complete':
-            await context.bot.send_message(group_id, "There is already an active game in this group. Please wait for it to finish before starting a revenge match.")
-            return
-
-    challenger_user = await context.bot.get_chat_member(group_id, loser_id)
-    opponent_user = await context.bot.get_chat_member(group_id, winner_id)
-
-    # The winner of the old game is the opponent in the new revenge game.
-    old_winner_id = str(winner_id)
-
-    # Determine which stake belonged to the winner of the last round
-    if str(old_game['challenger_id']) == old_winner_id:
-        winner_stake = old_game.get('challenger_stake')
-    else:
-        winner_stake = old_game.get('opponent_stake')
-
-    if not winner_stake:
-        await query.edit_message_text("Could not find the winner's stake from the original game. Cannot start a revenge match.")
-        return
-
-    # In a revenge match, both players use the same stake as the winner's original stake
-    challenger_stake = winner_stake
-    opponent_stake = winner_stake
-
-    game_id = str(uuid.uuid4())
-    games_data[game_id] = {
-        "group_id": group_id,
-        "challenger_id": challenger_user.user.id,
-        "opponent_id": opponent_user.user.id,
-        "is_revenge": True,
-        "old_game_id": old_game_id,
-        "status": "pending_game_selection",
-        "challenger_stake": challenger_stake,
-        "opponent_stake": opponent_stake,
-        "messages_to_delete": [],
-        "last_activity": time.time()
-    }
-    await save_games_data_async(games_data)
-
-    challenger_name = get_display_name(challenger_user.user.id, challenger_user.user.full_name, group_id)
-    opponent_name = get_display_name(opponent_user.user.id, opponent_user.user.full_name, group_id)
-
-    await query.edit_message_reply_markup(reply_markup=None)
-    await send_and_track_message(
-        context,
-        group_id,
-        game_id,
-        f"{challenger_name} is plotting revenge against {opponent_name}! The same stakes are on the line.",
-        parse_mode='HTML'
-    )
-
-    try:
-        keyboard = [[InlineKeyboardButton("Start Revenge Setup", callback_data=f"game:setup:start:{game_id}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await send_and_track_message(
-            context,
-            challenger_user.user.id,
-            game_id,
-            "Let's set up your revenge! The stakes from your last game have been carried over. Please select a new game type to play.",
-            reply_markup=reply_markup
-        )
-    except Exception:
-        logger.exception(f"Failed to send private message to user {challenger_user.user.id}")
 
 
 async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3853,25 +3747,6 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await save_games_data_async(games_data)
 
-    # If it's a revenge game, stakes are carried over, so skip stake selection.
-    if game.get('is_revenge'):
-        if game_type == 'dice':
-            # Still need to select rounds for dice game
-            keyboard = [
-                [InlineKeyboardButton("Best of 3", callback_data=f'rounds:3:{game_id}')],
-                [InlineKeyboardButton("Best of 5", callback_data=f'rounds:5:{game_id}')],
-                [InlineKeyboardButton("Best of 9", callback_data=f'rounds:9:{game_id}')],
-                [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text="How many rounds would you like to play?", reply_markup=reply_markup)
-            return ROUND_SELECTION
-        else:
-            # For other games, proceed directly to confirmation
-            context.user_data['player_role'] = 'challenger'
-            await show_confirmation(update, context)
-            return CONFIRMATION
-
     # Standard flow for non-revenge games
     if game_type == 'dice':
         keyboard = [
@@ -3914,12 +3789,6 @@ async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     game['rounds_to_play'] = rounds
     await save_games_data_async(games_data)
 
-    # If it's a revenge game, stakes are already set, so skip to confirmation.
-    if game.get('is_revenge'):
-        context.user_data['player_role'] = 'challenger'
-        await show_confirmation(update, context)
-        return CONFIRMATION
-
     # Standard flow for non-revenge games
     keyboard = [
         [InlineKeyboardButton("Points", callback_data=f'stake:points:{game_id}')],
@@ -3951,8 +3820,25 @@ async def stake_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['game_id'] = game_id
 
     if stake_type == 'points':
-        await query.edit_message_text(text="How many points would you like to stake?")
-        return STAKE_SUBMISSION_POINTS
+        user_id = query.from_user.id
+        group_id = game['group_id']
+        user_points = get_user_points(group_id, user_id)
+
+        if user_points <= 0:
+            keyboard = [
+                [InlineKeyboardButton("Stake Media Instead", callback_data=f'stake:media:{game_id}')],
+                [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                text="You have 0 points and cannot stake them. Please stake media instead or cancel the game.",
+                reply_markup=reply_markup
+            )
+            return STAKE_TYPE_SELECTION # Stay in the same state, but show new options
+        else:
+            await query.edit_message_text(text=f"You have {user_points} points. How many would you like to stake?")
+            return STAKE_SUBMISSION_POINTS
+
     elif stake_type == 'media':
         await query.edit_message_text(text="Please send the media file you would like to stake (photo, video, or voice note).")
         return STAKE_SUBMISSION_MEDIA
@@ -4432,11 +4318,6 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
         return
 
     if response_type == 'accept':
-        if game.get('is_revenge'):
-            await query.edit_message_text("Revenge challenge accepted! The game will now begin in the group chat.")
-            await start_game(context, game_id)
-            return
-
         game['status'] = 'pending_opponent_stake'
         await save_games_data_async(games_data)
 
@@ -4473,51 +4354,6 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
             logger.info(f"Cleaned up limbo game {game_id} due to opponent PM failure.")
 
     elif response_type == 'refuse':
-        if game.get('is_revenge'):
-            # --- Revenge Refusal Logic (simplified) ---
-            refuser_id = game['opponent_id']
-            challenger_id = game['challenger_id']
-            # The refuser's stake is their opponent_stake in the revenge game object
-            refuser_stake = game.get('opponent_stake')
-
-            refuser_member = await context.bot.get_chat_member(game['group_id'], refuser_id)
-            challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
-            refuser_name = get_display_name(refuser_id, refuser_member.user.full_name, game['group_id'])
-            challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
-
-            if refuser_stake:
-                if refuser_stake['type'] == 'points':
-                    points_val = refuser_stake['value']
-                    await add_user_points(game['group_id'], challenger_id, points_val, context)
-                    await add_user_points(game['group_id'], refuser_id, -points_val, context)
-                    await context.bot.send_message(
-                        game['group_id'],
-                        f"{refuser_name} has refused the revenge match and forfeited {points_val} points to {challenger_name}!",
-                        parse_mode='HTML'
-                    )
-                else: # media
-                    media_type = refuser_stake['type']
-                    file_id = refuser_stake['value']
-                    caption = f"{refuser_name} has refused the revenge match and forfeited their stake to {challenger_name}!"
-                    if media_type == 'photo':
-                        await context.bot.send_photo(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                    elif media_type == 'video':
-                        await context.bot.send_video(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                    elif media_type == 'voice':
-                        await context.bot.send_voice(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-            else:
-                 await context.bot.send_message(
-                    game['group_id'],
-                    f"{refuser_name} has refused the revenge match, but no stake was found to forfeit.",
-                    parse_mode='HTML'
-                )
-
-            # Clean up the revenge game
-            del games_data[game_id]
-            await save_games_data_async(games_data)
-            await query.edit_message_text("Revenge challenge refused.")
-            return
-
         challenger_id = game['challenger_id']
         challenger_stake = game['challenger_stake']
 
@@ -4739,7 +4575,6 @@ if __name__ == '__main__':
     app.add_handler(opponent_game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
     app.add_handler(CallbackQueryHandler(addtod_type_handler, pattern=r'^addtod:(truth|dare)$'))
-    app.add_handler(CallbackQueryHandler(revenge_handler, pattern=r'^game:revenge:.*'))
     app.add_handler(CallbackQueryHandler(connect_four_move_handler, pattern=r'^c4:move:.*'))
     app.add_handler(CallbackQueryHandler(tictactoe_move_handler, pattern=r'^ttt:move:.*'))
     app.add_handler(CallbackQueryHandler(bs_select_col_handler, pattern=r'^bs:col:.*'))
