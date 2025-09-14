@@ -79,8 +79,13 @@ def command_handler_wrapper(admin_only=False):
     def decorator(func):
         @wraps(func)
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+            # If there's no message, it's likely a CallbackQuery.
+            # Pass through to the original function without processing.
+            if not update.message:
+                return await func(update, context, *args, **kwargs)
+
             # Do not process if the message is not from a user
-            if not update.effective_user or not update.message:
+            if not update.effective_user:
                 return
 
             user = update.effective_user
@@ -90,6 +95,7 @@ def command_handler_wrapper(admin_only=False):
 
             # Defer message deletion to the end
             should_delete = True
+            result = None # To store the return value of the wrapped function
 
             try:
                 # Check if the command is disabled
@@ -98,7 +104,8 @@ def command_handler_wrapper(admin_only=False):
                     disabled_cmds = set(load_disabled_commands().get(str(chat.id), []))
                     if command_name in disabled_cmds:
                         logger.info(f"Command '{command_name}' is disabled in group {chat.id}. Aborting.")
-                        return # Silently abort if command is disabled
+                        # Abort but still delete the message by returning here and letting finally execute.
+                        return
 
                 if admin_only and chat.type in ['group', 'supergroup']:
                     member = await context.bot.get_chat_member(chat.id, user.id)
@@ -107,11 +114,11 @@ def command_handler_wrapper(admin_only=False):
                             f"Warning: {user.mention_html()}, you are not authorized to use this command.",
                             parse_mode='HTML'
                         )
-                        # Still delete their command attempt
+                        # Still delete their command attempt by returning and letting finally execute.
                         return
 
-                # Execute the actual command function
-                await func(update, context, *args, **kwargs)
+                # Execute the actual command function and store its result
+                result = await func(update, context, *args, **kwargs)
 
             finally:
                 # Delete the command message
@@ -120,6 +127,8 @@ def command_handler_wrapper(admin_only=False):
                         await context.bot.delete_message(chat.id, message_id)
                     except Exception:
                         logger.warning(f"Failed to delete command message {message_id} in chat {chat.id}. Bot may not have delete permissions.")
+
+            return result # Return the stored result
 
         return wrapper
     return decorator
@@ -1944,6 +1953,7 @@ async def bs_handle_placement(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return BS_AWAITING_PLACEMENT
 
+@command_handler_wrapper(admin_only=False)
 async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the ship placement conversation and aborts the game."""
     game_id = context.user_data.get('bs_game_id')
@@ -2326,6 +2336,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data.pop(ASK_TASK_DESCRIPTION, None)
         return
 
+@command_handler_wrapper(admin_only=False)
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /cancel: Cancel any pending reward selection.
@@ -3004,6 +3015,7 @@ async def addtod_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add. You can send multiple in one message, just put each one on a new line.")
 
 
+@command_handler_wrapper(admin_only=False)
 async def tod_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the ToD conversation."""
     if update.message:
@@ -3023,6 +3035,7 @@ async def tod_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+@command_handler_wrapper(admin_only=False)
 async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """ /dareme - Starts a game of Truth or Dare. """
     if update.effective_chat.type not in ["group", "supergroup"]:
@@ -4098,6 +4111,7 @@ async def start_opponent_setup(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     return STAKE_TYPE_SELECTION
 
+@command_handler_wrapper(admin_only=False)
 async def cancel_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the game setup."""
     game_id = context.user_data.get('game_id')
