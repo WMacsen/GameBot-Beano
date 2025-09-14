@@ -49,8 +49,27 @@ BOT_USERNAME: Final = '@YourBotUsername'  # <--- CHANGE THIS to your bot's usern
 OWNER_ID = 123456789  # <--- CHANGE THIS to your own Telegram User ID
 # END IMPORTANT
 
+# Get the absolute path to the directory containing this script
+# This makes file paths independent of the current working directory
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+
 # File paths for persistent data storage
-ADMIN_DATA_FILE = 'admins.json'          # Stores admin/owner info
+ADMIN_DATA_FILE = os.path.join(BASE_DIR, 'admins.json')
+TOD_DATA_FILE = os.path.join(BASE_DIR, 'truth_or_dare.json')
+ACTIVE_TOD_GAMES_FILE = os.path.join(BASE_DIR, 'active_tod_games.json')
+MESSAGE_TIMERS_FILE = os.path.join(BASE_DIR, 'message_timers.json')
+TRACKED_MESSAGES_FILE = os.path.join(BASE_DIR, 'tracked_messages.json')
+USER_TITLES_FILE = os.path.join(BASE_DIR, 'user_titles.json')
+REWARDS_DATA_FILE = os.path.join(BASE_DIR, 'rewards.json')
+POINTS_DATA_FILE = os.path.join(BASE_DIR, 'points.json')
+NEGATIVE_POINTS_TRACKER_FILE = os.path.join(BASE_DIR, 'negative_points_tracker.json')
+CHANCE_COOLDOWNS_FILE = os.path.join(BASE_DIR, 'chance_cooldowns.json')
+GAMES_DATA_FILE = os.path.join(BASE_DIR, 'games.json')
+PUNISHMENTS_DATA_FILE = os.path.join(BASE_DIR, 'punishments.json')
+PUNISHMENT_STATUS_FILE = os.path.join(BASE_DIR, 'punishment_status.json')
+MEDIA_STAKES_FILE = os.path.join(BASE_DIR, 'media_stakes.json')
+USER_PROFILES_FILE = os.path.join(BASE_DIR, 'user_profiles.json')
+DISABLED_COMMANDS_FILE = os.path.join(BASE_DIR, 'disabled_commands.json')
 
 
 # =========================
@@ -109,8 +128,6 @@ def command_handler_wrapper(admin_only=False):
 # =============================
 # Admin/Owner Data Management
 # =============================
-USER_TITLES_FILE = 'user_titles.json'
-
 def load_user_titles():
     if os.path.exists(USER_TITLES_FILE):
         with open(USER_TITLES_FILE, 'r', encoding='utf-8') as f:
@@ -462,11 +479,85 @@ async def get_user_id_by_username(context, chat_id, username) -> str:
     logger.debug(f"Username {username} not found in cache or admin list for chat {chat_id}")
     return None
 
+
+# =================================
+# Message Timer Data Management
+# =================================
+def load_message_timers():
+    """Loads the message timer settings from file."""
+    if os.path.exists(MESSAGE_TIMERS_FILE):
+        with open(MESSAGE_TIMERS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_message_timers(data):
+    """Saves the message timer settings to file."""
+    with open(MESSAGE_TIMERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_tracked_messages():
+    """Loads the tracked messages from file."""
+    if os.path.exists(TRACKED_MESSAGES_FILE):
+        with open(TRACKED_MESSAGES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_tracked_messages(data):
+    """Saves the tracked messages to file."""
+    with open(TRACKED_MESSAGES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+async def _track_sent_message(message: telegram.Message):
+    """Helper function to track a message for potential deletion."""
+    if not message or message.chat.type == 'private':
+        return
+
+    timers = load_message_timers()
+    group_id_str = str(message.chat.id)
+
+    # Check if a timer is active for this group (duration > 0)
+    if timers.get(group_id_str, 0) > 0:
+        tracked_messages = load_tracked_messages()
+        if group_id_str not in tracked_messages:
+            tracked_messages[group_id_str] = []
+
+        tracked_messages[group_id_str].append({
+            'message_id': message.message_id,
+            'chat_id': message.chat.id,
+            'timestamp': time.time()
+        })
+        save_tracked_messages(tracked_messages)
+        logger.debug(f"Tracked message {message.message_id} in chat {message.chat.id} for deletion.")
+
+async def send_message_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, **kwargs):
+    """Sends a text message and tracks it."""
+    message = await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
+    await _track_sent_message(message)
+    return message
+
+async def send_photo_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, photo: str, **kwargs):
+    """Sends a photo and tracks it."""
+    message = await context.bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
+    await _track_sent_message(message)
+    return message
+
+async def send_video_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, video: str, **kwargs):
+    """Sends a video and tracks it."""
+    message = await context.bot.send_video(chat_id=chat_id, video=video, **kwargs)
+    await _track_sent_message(message)
+    return message
+
+async def send_voice_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, voice: str, **kwargs):
+    """Sends a voice message and tracks it."""
+    message = await context.bot.send_voice(chat_id=chat_id, voice=voice, **kwargs)
+    await _track_sent_message(message)
+    return message
+
+
 # =============================
 # Reward System Storage & Helpers
 # =============================
-REWARDS_DATA_FILE = 'rewards.json'  # Stores rewards per group
-
 DEFAULT_REWARD = {"name": "Other", "cost": 0}
 
 def load_rewards_data():
@@ -521,8 +612,6 @@ def remove_reward(group_id, name):
 # =============================
 # Point System Storage & Helpers
 # =============================
-POINTS_DATA_FILE = 'points.json'  # Stores user points per group
-
 def load_points_data():
     if os.path.exists(POINTS_DATA_FILE):
         with open(POINTS_DATA_FILE, 'r', encoding='utf-8') as f:
@@ -550,6 +639,11 @@ def set_user_points(group_id, user_id, points):
     logger.debug(f"Set points for user {user_id} in group {group_id} to {points}")
 
 async def check_for_punishment(group_id, user_id, old_points, new_points, context: ContextTypes.DEFAULT_TYPE):
+    # Punishments do not apply in private chats
+    chat = await context.bot.get_chat(group_id)
+    if chat.type == 'private':
+        return
+
     punishments_data = load_punishments_data()
     group_id_str = str(group_id)
 
@@ -622,8 +716,6 @@ async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAUL
 # =============================
 # Negative Points Tracker
 # =============================
-NEGATIVE_POINTS_TRACKER_FILE = 'negative_points_tracker.json'
-
 def load_negative_tracker():
     if os.path.exists(NEGATIVE_POINTS_TRACKER_FILE):
         with open(NEGATIVE_POINTS_TRACKER_FILE, 'r', encoding='utf-8') as f:
@@ -635,6 +727,11 @@ def save_negative_tracker(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 async def check_for_negative_points(group_id, user_id, points, context: ContextTypes.DEFAULT_TYPE):
+    # Punishments do not apply in private chats
+    chat = await context.bot.get_chat(group_id)
+    if chat.type == 'private':
+        return
+
     if points < 0:
         tracker = load_negative_tracker()
         group_id_str = str(group_id)
@@ -693,8 +790,6 @@ async def check_for_negative_points(group_id, user_id, points, context: ContextT
 # =============================
 # Chance Game Helpers
 # =============================
-CHANCE_COOLDOWNS_FILE = 'chance_cooldowns.json'
-
 def load_cooldowns():
     if os.path.exists(CHANCE_COOLDOWNS_FILE):
         with open(CHANCE_COOLDOWNS_FILE, 'r', encoding='utf-8') as f:
@@ -732,10 +827,44 @@ def get_chance_outcome():
 
 import asyncio
 
+# ===================================
+# Truth or Dare Data Management
+# ===================================
+TOD_DATA_LOCK = asyncio.Lock()
+ACTIVE_TOD_GAMES_LOCK = asyncio.Lock()
+
+async def load_tod_data():
+    """Asynchronously loads truth or dare data from the JSON file with a lock."""
+    async with TOD_DATA_LOCK:
+        if os.path.exists(TOD_DATA_FILE):
+            with open(TOD_DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+
+async def save_tod_data(data):
+    """Asynchronously saves truth or dare data to the JSON file with a lock."""
+    async with TOD_DATA_LOCK:
+        with open(TOD_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+async def load_active_tod_games():
+    """Asynchronously loads active truth or dare games from the JSON file with a lock."""
+    async with ACTIVE_TOD_GAMES_LOCK:
+        if os.path.exists(ACTIVE_TOD_GAMES_FILE):
+            with open(ACTIVE_TOD_GAMES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+
+async def save_active_tod_games(data):
+    """Asynchronously saves active truth or dare games to the JSON file with a lock."""
+    async with ACTIVE_TOD_GAMES_LOCK:
+        with open(ACTIVE_TOD_GAMES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 # =============================
 # Game System Storage & Helpers
 # =============================
-GAMES_DATA_FILE = 'games.json'
 GAMES_DATA_LOCK = asyncio.Lock()
 
 async def load_games_data_async():
@@ -824,7 +953,7 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
                 logger.error(f"Deletion of message {msg['message_id']} returned False but did not raise exception.")
         except Exception as e:
             logger.error(f"Explicitly failed to delete message {msg['message_id']}", exc_info=True)
-        await asyncio.sleep(0.5) # Add a small delay to avoid rate limiting
+        await asyncio.sleep(1.1) # Add a small delay to avoid rate limiting
 
     if game_id in games_data:
         games_data[game_id]['messages_to_delete'] = []
@@ -860,33 +989,25 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
     loser_name = get_display_name(loser_id, loser_member.user.full_name, game['group_id'])
     winner_name = get_display_name(winner_id, winner_member.user.full_name, game['group_id'])
 
-    # Store winner and loser IDs for the revenge handler
-    game['winner_id'] = winner_id
-    game['loser_id'] = loser_id
-
-    # Add a revenge button with shortened callback_data
-    keyboard = [[InlineKeyboardButton("Revenge 😈", callback_data=f"game:revenge:{game_id}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     if loser_stake['type'] == 'points':
         points_val = loser_stake['value']
         await add_user_points(game['group_id'], winner_id, points_val, context)
         await add_user_points(game['group_id'], loser_id, -points_val, context)
         message = f"{winner_name} has won the game! {loser_name} lost {points_val} points."
-        await context.bot.send_message(
+        await send_message_and_track(
+            context,
             game['group_id'],
             message,
-            parse_mode='HTML',
-            reply_markup=reply_markup
+            parse_mode='HTML'
         )
     else:  # media
         caption = f"{winner_name} won the game! This is the loser's stake from {loser_name}."
         if loser_stake['type'] == 'photo':
-            await context.bot.send_photo(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
+            await send_photo_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'video':
-            await context.bot.send_video(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
+            await send_video_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'voice':
-            await context.bot.send_voice(game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML', reply_markup=reply_markup)
+            await send_voice_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
 
     # Private messages to players (Battleship only)
     if game.get('game_type') == 'battleship':
@@ -903,83 +1024,6 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
     game['status'] = 'complete'
     await save_games_data_async(games_data)
     await delete_tracked_messages(context, game_id)
-
-
-async def revenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the revenge button click, allowing a loser to start a new game."""
-    query = update.callback_query
-    await query.answer()
-
-    try:
-        _, _, old_game_id = query.data.split(':')
-    except (ValueError, IndexError):
-        logger.error(f"Could not parse revenge callback data: {query.data}")
-        await query.edit_message_text("An error occurred while processing the revenge request.")
-        return
-
-    games_data = await load_games_data_async()
-    old_game = games_data.get(old_game_id)
-    if not old_game:
-        await query.edit_message_text("The original game data could not be found. It might be too old.")
-        return
-
-    loser_id = old_game.get('loser_id')
-    winner_id = old_game.get('winner_id')
-
-    if not loser_id or not winner_id:
-        await query.edit_message_text("The original game data is missing winner/loser information and a revenge match cannot be started.")
-        return
-
-    if query.from_user.id != loser_id:
-        await query.answer("This is not your revenge to claim!", show_alert=True)
-        return
-
-    group_id = old_game['group_id']
-
-    for game in games_data.values():
-        if game.get('group_id') == group_id and game.get('status') != 'complete':
-            await context.bot.send_message(group_id, "There is already an active game in this group. Please wait for it to finish before starting a revenge match.")
-            return
-
-    challenger_user = await context.bot.get_chat_member(group_id, loser_id)
-    opponent_user = await context.bot.get_chat_member(group_id, winner_id)
-
-    game_id = str(uuid.uuid4())
-    games_data[game_id] = {
-        "group_id": group_id,
-        "challenger_id": challenger_user.user.id,
-        "opponent_id": opponent_user.user.id,
-        "is_revenge": True,
-        "old_game_id": old_game_id,
-        "status": "pending_game_selection",
-        "messages_to_delete": [],
-        "last_activity": time.time()
-    }
-    await save_games_data_async(games_data)
-
-    challenger_name = get_display_name(challenger_user.user.id, challenger_user.user.full_name, group_id)
-    opponent_name = get_display_name(opponent_user.user.id, opponent_user.user.full_name, group_id)
-
-    await context.bot.send_message(
-        chat_id=group_id,
-        text=f"{challenger_name} wants revenge against {opponent_name}! {challenger_name}, check your private messages to set up the game.",
-        parse_mode='HTML'
-    )
-
-    try:
-        keyboard = [[InlineKeyboardButton("Start Revenge Setup", callback_data=f"game:setup:start:{game_id}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await send_and_track_message(
-            context,
-            challenger_user.user.id,
-            game_id,
-            "Let's set up your revenge! Click the button below to begin.",
-            reply_markup=reply_markup
-        )
-    except Exception:
-        logger.exception(f"Failed to send private message to user {challenger_user.user.id}")
-
-    await query.edit_message_reply_markup(reply_markup=None)
 
 
 async def connect_four_move_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1096,7 +1140,7 @@ def check_tictactoe_draw(board: list) -> bool:
     return all(cell != 0 for row in board for cell in row)
 
 async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
-    """Handles a draw, where both players lose their stakes."""
+    """Handles a draw, where both players lose their stakes, ensuring both penalties are processed."""
     games_data = await load_games_data_async()
     game = games_data[game_id]
 
@@ -1110,49 +1154,51 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
     opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
-    await context.bot.send_message(
+    await send_and_track_message(
+        context,
         game['group_id'],
+        game_id,
         f"The game between {challenger_name} and {opponent_name} ended in a draw! Both players lose their stakes.",
         parse_mode='HTML'
     )
 
     # Handle challenger's stake
-    if challenger_stake:
-        if challenger_stake['type'] == 'points':
-            points_val = challenger_stake['value']
-            await add_user_points(game['group_id'], challenger_id, -points_val, context)
-            await context.bot.send_message(
-                game['group_id'],
-                f"{challenger_name} lost {points_val} points in the draw.",
-                parse_mode='HTML'
-            )
-        else: # media
-            caption = f"This was {challenger_name}'s stake from the drawn game."
-            if challenger_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
-            elif challenger_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
-            elif challenger_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+    try:
+        if challenger_stake:
+            if challenger_stake['type'] == 'points':
+                points_val = challenger_stake['value']
+                await add_user_points(game['group_id'], challenger_id, -points_val, context)
+                await send_message_and_track(context, game['group_id'], f"{challenger_name} lost {points_val} points in the draw.", parse_mode='HTML')
+            else:  # media
+                caption = f"This was {challenger_name}'s stake from the drawn game."
+                if challenger_stake['type'] == 'photo':
+                    await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                elif challenger_stake['type'] == 'video':
+                    await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                elif challenger_stake['type'] == 'voice':
+                    await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"Failed to process challenger's stake in draw for game {game_id}: {e}")
+        await send_message_and_track(context, game['group_id'], f"Could not process {challenger_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     # Handle opponent's stake
-    if opponent_stake:
-        if opponent_stake['type'] == 'points':
-            points_val = opponent_stake['value']
-            await add_user_points(game['group_id'], opponent_id, -points_val, context)
-            await context.bot.send_message(
-                game['group_id'],
-                f"{opponent_name} lost {points_val} points in the draw.",
-                parse_mode='HTML'
-            )
-        else: # media
-            caption = f"This was {opponent_name}'s stake from the drawn game."
-            if opponent_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
-            elif opponent_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
-            elif opponent_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+    try:
+        if opponent_stake:
+            if opponent_stake['type'] == 'points':
+                points_val = opponent_stake['value']
+                await add_user_points(game['group_id'], opponent_id, -points_val, context)
+                await send_message_and_track(context, game['group_id'], f"{opponent_name} lost {points_val} points in the draw.", parse_mode='HTML')
+            else:  # media
+                caption = f"This was {opponent_name}'s stake from the drawn game."
+                if opponent_stake['type'] == 'photo':
+                    await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                elif opponent_stake['type'] == 'video':
+                    await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                elif opponent_stake['type'] == 'voice':
+                    await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"Failed to process opponent's stake in draw for game {game_id}: {e}")
+        await send_message_and_track(context, game['group_id'], f"Could not process {opponent_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -1324,48 +1370,169 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
     challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
     opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
-    await context.bot.send_message(
+    await send_and_track_message(
+        context,
         game['group_id'],
+        game_id,
         f"Game between {challenger_name} and {opponent_name} has been cancelled due to inactivity. Both players lose their stakes.",
         parse_mode='HTML'
     )
 
     # Handle challenger's stake
-    if challenger_stake:
-        if challenger_stake['type'] == 'points':
-            await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
-        else: # media
-            caption = f"This was {challenger_name}'s stake from the cancelled game."
-            if challenger_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption)
-            elif challenger_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption)
-            elif challenger_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption)
+    try:
+        if challenger_stake:
+            if challenger_stake['type'] == 'points':
+                await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
+                await send_message_and_track(context, game['group_id'], f"{challenger_name} lost their stake in the cancelled game.", parse_mode='HTML')
+            else:  # media
+                caption = f"This was {challenger_name}'s stake from the cancelled game."
+                if challenger_stake['type'] == 'photo':
+                    await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                elif challenger_stake['type'] == 'video':
+                    await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                elif challenger_stake['type'] == 'voice':
+                    await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+    except Exception as e:
+        logger.error(f"Failed to process challenger's stake in cancellation for game {game_id}: {e}")
+        await send_message_and_track(context, game['group_id'], f"Could not process {challenger_name}'s stake due to an error.", parse_mode='HTML')
+
 
     # Handle opponent's stake
-    if opponent_stake:
-        if opponent_stake['type'] == 'points':
-            await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
-        else: # media
-            caption = f"This was {opponent_name}'s stake from the cancelled game."
-            if opponent_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], opponent_stake['value'], caption=caption)
-            elif opponent_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], opponent_stake['value'], caption=caption)
-            elif opponent_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], opponent_stake['value'], caption=caption)
+    try:
+        if opponent_stake:
+            if opponent_stake['type'] == 'points':
+                await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
+                await send_message_and_track(context, game['group_id'], f"{opponent_name} lost their stake in the cancelled game.", parse_mode='HTML')
+            else:  # media
+                caption = f"This was {opponent_name}'s stake from the cancelled game."
+                if opponent_stake['type'] == 'photo':
+                    await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                elif opponent_stake['type'] == 'video':
+                    await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                elif opponent_stake['type'] == 'voice':
+                    await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+    except Exception as e:
+        logger.error(f"Failed to process opponent's stake in cancellation for game {game_id}: {e}")
+        await send_message_and_track(context, game['group_id'], f"Could not process {opponent_name}'s stake due to an error.", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
     await delete_tracked_messages(context, game_id)
 
+async def handle_tod_timeout(context: ContextTypes.DEFAULT_TYPE, tod_game_id: str):
+    """Handles a Truth or Dare game that has timed out while awaiting proof."""
+    logger.info(f"Handling timeout for ToD game {tod_game_id}")
+    active_games = await load_active_tod_games()
+    game = active_games.get(tod_game_id)
+
+    if not game:
+        logger.warning(f"ToD game {tod_game_id} not found for timeout handling, it might have been completed or cancelled already.")
+        return
+
+    group_id = game['group_id']
+    user_id = game['user_id']
+
+    # Fetch user details for display name
+    try:
+        user_member = await context.bot.get_chat_member(group_id, user_id)
+        display_name = get_display_name(user_id, user_member.user.full_name, int(group_id))
+    except Exception as e:
+        logger.error(f"Could not fetch user {user_id} for ToD timeout message: {e}")
+        display_name = f"User {user_id}"
+
+    # Penalize user
+    await add_user_points(int(group_id), user_id, -15, context)
+
+    # Notify group
+    await send_message_and_track(
+        context,
+        chat_id=group_id,
+        text=f"⏰ {display_name} ran out of time to provide proof for their {game['type']} and has been penalized 15 points.",
+        parse_mode='HTML'
+    )
+
+    # Notify admins (similar to refusal)
+    admin_data = load_admin_data()
+    group_admins = {uid for uid, groups in admin_data.get('admins', {}).items() if str(group_id) in groups}
+    owner_id = admin_data.get('owner')
+    if owner_id:
+        group_admins.add(owner_id)
+
+    notification_text = (
+        f"🔔 <b>Timeout Notification</b> 🔔\n\n"
+        f"User: {display_name}\n"
+        f"Group ID: {group_id}\n"
+        f"Task timed out: <i>{html.escape(game['text'])}</i>"
+    )
+    for admin_id in group_admins:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=notification_text, parse_mode='HTML')
+        except Exception as e:
+            logger.warning(f"Failed to notify admin {admin_id} of ToD timeout: {e}")
+
+    # Edit original message
+    try:
+        original_text = f"The user's time ran out for the {game['type']}:\n\n<i>{html.escape(game['text'])}</i>"
+        await context.bot.edit_message_text(
+            chat_id=game['chat_id'],
+            message_id=game['message_id'],
+            text=original_text,
+            reply_markup=None,
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.error(f"Could not edit original ToD message after timeout: {e}")
+
+    # Clean up game
+    if tod_game_id in active_games:
+        del active_games[tod_game_id]
+        await save_active_tod_games(active_games)
+
+async def delete_expired_messages(context: ContextTypes.DEFAULT_TYPE):
+    """Periodically checks for and deletes tracked messages that have expired."""
+    logger.debug("Running scheduled job: delete_expired_messages")
+    timers = load_message_timers()
+    tracked_messages = load_tracked_messages()
+
+    if not timers or not tracked_messages:
+        return
+
+    now = time.time()
+    # Create a copy of the items to avoid issues with modifying the dict while iterating
+    for group_id, messages in list(tracked_messages.items()):
+        timer_duration = timers.get(group_id)
+
+        # Skip if timer is disabled or not set for this group
+        if not timer_duration or timer_duration <= 0:
+            continue
+
+        messages_to_keep = []
+        for message in messages:
+            if now - message['timestamp'] > timer_duration:
+                try:
+                    await context.bot.delete_message(chat_id=message['chat_id'], message_id=message['message_id'])
+                    logger.info(f"Successfully deleted message {message['message_id']} from chat {message['chat_id']}.")
+                except Exception as e:
+                    # This can happen if the message was already deleted or the bot lacks permission.
+                    logger.warning(f"Failed to delete message {message['message_id']} from chat {message['chat_id']}: {e}")
+            else:
+                messages_to_keep.append(message)
+
+        if not messages_to_keep:
+            # If all messages for the group were deleted, remove the group key
+            del tracked_messages[group_id]
+        else:
+            tracked_messages[group_id] = messages_to_keep
+
+    save_tracked_messages(tracked_messages)
+
+
 async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
     """Periodically checks for inactive games and handles them."""
-    games_data = await load_games_data_async()
     now = time.time()
 
-    # Create a copy of items to avoid issues with modifying dict during iteration
+    # --- Handle 2-Player Game Inactivity ---
+    games_data = await load_games_data_async()
     for game_id, game in list(games_data.items()):
         if game.get('status', '') not in ['pending_opponent_acceptance', 'active', 'pending_game_selection', 'pending_opponent_stake']:
             continue
@@ -1376,13 +1543,13 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
         if game.get('status') == 'pending_opponent_acceptance' and (now - last_activity > 120):
             logger.info(f"Game {game_id} timed out at acceptance stage. Cancelling without penalty.")
             await handle_challenge_timeout(context, game_id)
-            continue # Game is handled, move to the next one
+            continue
 
         # 7 minutes timeout -> cancel
         if now - last_activity > 420:
             logger.info(f"Game {game_id} timed out. Cancelling.")
             await handle_game_cancellation(context, game_id)
-            # handle_game_cancellation will change status, so this game won't be processed again
+            continue
 
         # 5 minutes timeout -> warning
         elif now - last_activity > 300 and not game.get('warning_sent'):
@@ -1390,7 +1557,8 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
             try:
                 challenger = await context.bot.get_chat_member(game['group_id'], game['challenger_id'])
                 opponent = await context.bot.get_chat_member(game['group_id'], game['opponent_id'])
-                await context.bot.send_message(
+                await send_message_and_track(
+                    context,
                     chat_id=game['group_id'],
                     text=f"Warning: The game between {challenger.user.mention_html()} and {opponent.user.mention_html()} will be cancelled in 2 minutes due to inactivity.",
                     parse_mode='HTML'
@@ -1399,6 +1567,36 @@ async def check_game_inactivity(context: ContextTypes.DEFAULT_TYPE):
                 await save_games_data_async(games_data)
             except Exception as e:
                 logger.error(f"Failed to send inactivity warning for game {game_id}: {e}")
+
+    # --- Handle Truth or Dare Inactivity ---
+    active_tod_games = await load_active_tod_games()
+    for tod_game_id, tod_game in list(active_tod_games.items()):
+        if tod_game.get('status') != 'awaiting_proof':
+            continue
+
+        timestamp = tod_game.get('timestamp', 0)
+
+        # 7 minutes timeout (420s) -> cancel
+        if now - timestamp > 420:
+            logger.info(f"ToD game {tod_game_id} timed out while awaiting proof. Cancelling.")
+            await handle_tod_timeout(context, tod_game_id)
+            continue
+
+        # 5 minutes timeout (300s) -> warning
+        elif now - timestamp > 300 and not tod_game.get('warning_sent'):
+            logger.info(f"ToD game {tod_game_id} inactive for 5 minutes. Sending warning.")
+            try:
+                user = await context.bot.get_chat_member(tod_game['group_id'], tod_game['user_id'])
+                await send_message_and_track(
+                    context,
+                    chat_id=tod_game['group_id'],
+                    text=f"Warning: {user.user.mention_html()}, you have 2 minutes left to provide proof for your {tod_game['type']}!",
+                    parse_mode='HTML'
+                )
+                active_tod_games[tod_game_id]['warning_sent'] = True
+                await save_active_tod_games(active_tod_games)
+            except Exception as e:
+                logger.error(f"Failed to send inactivity warning for ToD game {tod_game_id}: {e}")
 
 
 async def generate_public_bs_board_message(context: ContextTypes.DEFAULT_TYPE, game: dict) -> str:
@@ -1617,9 +1815,11 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"You fired at {coord_name}. {result_text}\n\nYour turn is over. The board in the group has been updated.", parse_mode='HTML')
 
     try:
-        await context.bot.send_message(
-            chat_id=int(opponent_id_str),
-            text=f"{attacker_name} fired at {coord_name}. {result_text}",
+        await send_and_track_message(
+            context,
+            int(opponent_id_str),
+            game_id,
+            f"{attacker_name} fired at {coord_name}. {result_text}",
             parse_mode='HTML'
         )
     except Exception as e:
@@ -1755,9 +1955,11 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
             user_id = str(update.effective_user.id)
             other_player_id = str(game['opponent_id'] if user_id == str(game['challenger_id']) else game['challenger_id'])
             try:
-                await context.bot.send_message(
-                    chat_id=other_player_id,
-                    text=f"{update.effective_user.full_name} has cancelled the game during ship placement."
+                await send_and_track_message(
+                    context,
+                    other_player_id,
+                    game_id,
+                    f"{update.effective_user.full_name} has cancelled the game during ship placement."
                 )
             except Exception:
                 logger.warning(f"Failed to notify other player {other_player_id} of cancellation.")
@@ -1769,18 +1971,13 @@ async def bs_placement_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
                 del games_data[game_id]
             await save_games_data_async(games_data)
 
-    await update.message.reply_text("Ship placement cancelled. The game has been aborted.")
+    await send_and_track_message(context, update.effective_chat.id, game_id, "Ship placement cancelled. The game has been aborted.")
     context.user_data.clear()
     return ConversationHandler.END
 
 # =============================
 # Punishment System Storage & Helpers
 # =============================
-PUNISHMENTS_DATA_FILE = 'punishments.json'
-PUNISHMENT_STATUS_FILE = 'punishment_status.json'
-MEDIA_STAKES_FILE = 'media_stakes.json'
-USER_PROFILES_FILE = 'user_profiles.json'
-
 def load_user_profiles():
     if os.path.exists(USER_PROFILES_FILE):
         with open(USER_PROFILES_FILE, 'r', encoding='utf-8') as f:
@@ -1872,6 +2069,7 @@ ADDREWARD_COST_STATE = 'awaiting_addreward_cost'
 REMOVEREWARD_STATE = 'awaiting_removereward_name'
 ADDPOINTS_STATE = 'awaiting_addpoints_value'
 REMOVEPOINTS_STATE = 'awaiting_removepoints_value'
+AWAITING_TOD_CONTENT = 'awaiting_tod_content'
 
 @command_handler_wrapper(admin_only=False)
 async def reward_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1892,6 +2090,41 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     Handles all conversation-based interactions after a command has been issued.
     This acts as a router based on the state stored in context.user_data.
     """
+    # Heuristic check to see if a ConversationHandler is active.
+    # Its state is stored under a tuple key, while this manual handler uses string keys.
+    # If a ConversationHandler is active, we should not interfere.
+    if any(isinstance(key, tuple) for key in context.user_data.keys()):
+        return
+
+    # === Add ToD Content Flow ===
+    if AWAITING_TOD_CONTENT in context.user_data:
+        state = context.user_data[AWAITING_TOD_CONTENT]
+        add_type = state.get('type')
+        if not add_type:
+            await update.message.reply_text("Something went wrong, please start over with /addtod.")
+            context.user_data.clear()
+            return
+
+        group_id = str(update.effective_chat.id)
+        new_items = [item.strip() for item in update.message.text.split('\n') if item.strip()]
+
+        if not new_items:
+            await update.message.reply_text("I didn't receive any content. Please try again, or /cancel to exit.")
+            return
+
+        tod_data = await load_tod_data()
+        if group_id not in tod_data:
+            tod_data[group_id] = {"truths": [], "dares": []}
+
+        list_key = f"{add_type}s"
+        tod_data[group_id].setdefault(list_key, []).extend(new_items)
+
+        await save_tod_data(tod_data)
+
+        await update.message.reply_text(f"Successfully added {len(new_items)} new {add_type}(s)!")
+        context.user_data.pop(AWAITING_TOD_CONTENT, None)
+        return
+
     # === Add Reward Flow: Step 2 (Cost) ===
     if ADDREWARD_COST_STATE in context.user_data:
         state = context.user_data[ADDREWARD_COST_STATE]
@@ -1994,7 +2227,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             try:
                 await context.bot.send_message(
                     chat_id=admin.user.id,
-                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) just bought the reward: '{reward['name']}' for {reward['cost']} points."
+                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) just bought the reward: '{reward['name']}' for {reward['cost']} points.",
+                    parse_mode='HTML'
                 )
             except Exception:
                 logger.warning(f"Failed to notify admin {admin.user.id} about reward purchase.")
@@ -2049,7 +2283,8 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             try:
                 await context.bot.send_message(
                     chat_id=admin.user.id,
-                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) claimed the free reward: '{reward['name']}'."
+                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) claimed the free reward: '{reward['name']}'.",
+                    parse_mode='HTML'
                 )
             except Exception:
                 logger.warning(f"Failed to notify admin {admin.user.id} about free reward.")
@@ -2207,9 +2442,11 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     games_data = await load_games_data_async()
     group_id = update.effective_chat.id
+    # Concurrency Check: Only checks for active 2-player games (from games.json).
+    # This does not block Truth or Dare games, which are stored in a separate file.
     for game in games_data.values():
         if game.get('group_id') == group_id and game.get('status') != 'complete':
-            await update.message.reply_text("There is already an active game in this group. Please wait for it to finish.")
+            await update.message.reply_text("There is already an active 2-player game in this group. Please wait for it to finish.")
             return
 
     game_id = str(uuid.uuid4())
@@ -2249,9 +2486,19 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception:
         logger.exception(f"Failed to send private message to user {challenger_user.id}")
+        # Clean up the game data to prevent a limbo game
+        games_data = await load_games_data_async()
+        if game_id in games_data:
+            await delete_tracked_messages(context, game_id)
+            del games_data[game_id]
+            await save_games_data_async(games_data)
+            logger.info(f"Cleaned up limbo game {game_id} due to PM failure.")
+
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="I couldn't send you a private message. Please make sure you have started a chat with me privately first."
+            text=f"{challenger_user.mention_html()}, I couldn't send you a private message to set up the game. "
+                 f"Please make sure you have started a chat with me privately first. The challenge has been cancelled.",
+            parse_mode='HTML'
         )
 
 @command_handler_wrapper(admin_only=True)
@@ -2337,6 +2584,55 @@ async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game['status'] = 'complete'
     await save_games_data_async(games_data)
     await delete_tracked_messages(context, active_game_id)
+
+
+@command_handler_wrapper(admin_only=True)
+async def stopdare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /stopdare - (Admin only) Manually stops the current Truth or Dare game in the group. """
+    if update.effective_chat.type not in ['group', 'supergroup']:
+        await update.message.reply_text("This command can only be used in a group.")
+        return
+
+    group_id = str(update.effective_chat.id)
+    active_games = await load_active_tod_games()
+
+    active_tod_game_id = None
+    active_tod_game = None
+    for game_id, game in active_games.items():
+        if game.get('group_id') == group_id:
+            active_tod_game_id = game_id
+            active_tod_game = game
+            break
+
+    if not active_tod_game_id:
+        await update.message.reply_text("There is no active Truth or Dare game in this group to stop.")
+        return
+
+    user_id = active_tod_game['user_id']
+    user_member = await context.bot.get_chat_member(group_id, user_id)
+    display_name = get_display_name(user_id, user_member.user.full_name, int(group_id))
+
+    await context.bot.send_message(
+        chat_id=group_id,
+        text=f"The Truth or Dare for {display_name} has been manually stopped by an admin.",
+        parse_mode='HTML'
+    )
+
+    # Clean up the game
+    try:
+        original_text = f"This {active_tod_game['type']} was manually stopped by an admin:\n\n<i>{html.escape(active_tod_game['text'])}</i>"
+        await context.bot.edit_message_text(
+            chat_id=active_tod_game['chat_id'],
+            message_id=active_tod_game['message_id'],
+            text=original_text,
+            reply_markup=None,
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.error(f"Could not edit original ToD message after admin stop: {e}")
+
+    del active_games[active_tod_game_id]
+    await save_active_tod_games(active_games)
 
 from datetime import datetime
 
@@ -2555,12 +2851,12 @@ async def point_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Fetch and display points for the determined target
     points = get_user_points(group_id, target_user.id)
-    display_name = get_display_name(target_user.id, target_user.full_name, group_id)
+    display_name = get_display_name(target_user.id, target_user.full_name, int(group_id))
 
     if target_user.id == user.id:
-        await update.message.reply_text(f"You have {points} points.")
+        await send_message_and_track(context, update.effective_chat.id, f"You have {points} points.")
     else:
-        await update.message.reply_text(f"{display_name} has {points} points.", parse_mode='HTML')
+        await send_message_and_track(context, update.effective_chat.id, f"{display_name} has {points} points.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2594,13 +2890,14 @@ COMMAND_MAP = {
     'command': {'is_admin': False}, 'disable': {'is_admin': True}, 'enable': {'is_admin': True}, 'addreward': {'is_admin': True},
     'removereward': {'is_admin': True}, 'addpunishment': {'is_admin': True},
     'removepunishment': {'is_admin': True}, 'punishment': {'is_admin': True},
-    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True}, 'stopgame': {'is_admin': True},
+    'newgame': {'is_admin': False}, 'loser': {'is_admin': True}, 'cleangames': {'is_admin': True}, 'stopgame': {'is_admin': True}, 'stopdare': {'is_admin': True},
     'chance': {'is_admin': False}, 'reward': {'is_admin': False}, 'cancel': {'is_admin': False},
     'addpoints': {'is_admin': True}, 'removepoints': {'is_admin': True},
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
     'title': {'is_admin': True}, 'removetitle': {'is_admin': True},
     'update': {'is_admin': True}, 'viewstakes': {'is_admin': True},
-    'game': {'is_admin': False},
+    'game': {'is_admin': False}, 'dareme': {'is_admin': False}, 'addtod': {'is_admin': False}, 'managetod': {'is_admin': True},
+    'timer': {'is_admin': True}, 'notimer': {'is_admin': True},
 }
 
 @command_handler_wrapper(admin_only=False)
@@ -2655,6 +2952,11 @@ async def game_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_list_text = """
 <b>Available Games</b>
 
+😈 <b>Truth or Dare</b>
+- Command: `/dareme`
+- Rules: Starts a solo game of Truth or Dare. You get 15 points for completing the task.
+- Contributing: Anyone can add new questions using the `/addtod` command!
+
 🎲 <b>Chance Game</b>
 - Command: `/chance`
 - Rules: Play a game of chance for a random outcome. You can play up to 3 times per day.
@@ -2672,9 +2974,489 @@ You can choose from the following challenge games:
     await update.message.reply_text(game_list_text, parse_mode='HTML', disable_web_page_preview=True)
 
 
-# Persistent storage for disabled commands per group
-DISABLED_COMMANDS_FILE = 'disabled_commands.json'
+# =============================
+# Truth or Dare Commands
+# =============================
+@command_handler_wrapper(admin_only=False)
+async def addtod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the conversation to add a new truth or dare."""
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("This command can only be used in group chats.")
+        return
 
+    keyboard = [
+        [
+            InlineKeyboardButton("Truth", callback_data='addtod:truth'),
+            InlineKeyboardButton("Dare", callback_data='addtod:dare')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("What would you like to add?", reply_markup=reply_markup)
+
+async def addtod_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user's choice of adding a truth or a dare."""
+    query = update.callback_query
+    await query.answer()
+
+    choice_type = query.data.split(':')[1]
+    context.user_data[AWAITING_TOD_CONTENT] = {'type': choice_type}
+
+    await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add. You can send multiple in one message, just put each one on a new line.")
+
+
+async def tod_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancels the ToD conversation."""
+    if update.message:
+        await update.message.reply_text("Truth or Dare game cancelled.")
+    elif update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text("Truth or Dare game cancelled.")
+
+    tod_game_id = context.user_data.get('tod_game_id')
+    if tod_game_id:
+        active_games = await load_active_tod_games()
+        if tod_game_id in active_games:
+            del active_games[tod_game_id]
+            await save_active_tod_games(active_games)
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """ /dareme - Starts a game of Truth or Dare. """
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("This command can only be used in group chats.")
+        return ConversationHandler.END
+
+    active_games = await load_active_tod_games()
+    user_id = update.effective_user.id
+    group_id = str(update.effective_chat.id)
+
+    for game in active_games.values():
+        if game.get('group_id') == group_id:
+            if game.get('user_id') == user_id:
+                await update.message.reply_text("You already have an active truth or dare! Please complete or refuse it first.")
+            else:
+                await update.message.reply_text("There is already an active Truth or Dare game in this group. Please wait for it to finish.")
+            return ConversationHandler.END
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Truth", callback_data=f'tod:choice:truth:{user_id}'),
+            InlineKeyboardButton("Dare", callback_data=f'tod:choice:dare:{user_id}')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(f"{update.effective_user.mention_html()}, pick your poison:", reply_markup=reply_markup, parse_mode='HTML')
+    return TOD_CHOICE
+
+
+async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the user's choice of Truth or Dare."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        _, _, choice, intended_user_id = query.data.split(':')
+    except ValueError:
+        logger.error(f"Could not parse tod_choice_handler callback data: {query.data}")
+        return ConversationHandler.END
+
+    user = query.from_user
+    if str(user.id) != intended_user_id:
+        await query.answer("This is not for you!", show_alert=True)
+        return TOD_CHOICE
+
+    group_id = str(query.message.chat.id)
+    tod_data = await load_tod_data()
+    group_data = tod_data.get(group_id, {})
+
+    item_list = group_data.get(f'{choice}s', [])
+
+    if not item_list:
+        await query.edit_message_text(f"There are no {choice}s in the list for this group! Anyone can add some with /addtod.")
+        return ConversationHandler.END
+
+    selected_item = random.choice(item_list)
+
+    tod_game_id = str(uuid.uuid4())
+    context.user_data['tod_game_id'] = tod_game_id
+
+    text = f"{user.mention_html()}, your {choice} is:\n\n<b>{html.escape(selected_item)}</b>"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ I'll do it!", callback_data=f'tod:start_proof:{tod_game_id}'),
+            InlineKeyboardButton("❌ Refuse", callback_data=f'tod:refuse:{tod_game_id}')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+
+    active_games = await load_active_tod_games()
+    active_games[tod_game_id] = {
+        "user_id": user.id,
+        "group_id": group_id,
+        "type": choice,
+        "text": selected_item,
+        "message_id": query.message.message_id,
+        "chat_id": query.message.chat.id,
+        "timestamp": time.time(),
+        "status": "pending_acceptance"
+    }
+    await save_active_tod_games(active_games)
+    return TOD_ACCEPTANCE
+
+
+async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the user refusing a truth or dare."""
+    query = update.callback_query
+
+    try:
+        _, _, tod_game_id = query.data.split(':')
+    except ValueError:
+        logger.error(f"Could not parse tod_refuse_handler callback data: {query.data}")
+        await query.answer("An error occurred.", show_alert=True)
+        return ConversationHandler.END
+
+    active_games = await load_active_tod_games()
+    game = active_games.get(tod_game_id)
+
+    if not game:
+        await query.answer("This game session has expired or is invalid.", show_alert=True)
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass # Message might be gone
+        return ConversationHandler.END
+
+    if query.from_user.id != game['user_id']:
+        await query.answer("This is not your dare to refuse!", show_alert=True)
+        return TOD_ACCEPTANCE
+
+    await query.answer()
+
+    group_id = game['group_id']
+    user = query.from_user
+    display_name = get_display_name(user.id, user.full_name, int(group_id))
+
+    admin_data = load_admin_data()
+    group_admins = {uid for uid, groups in admin_data.get('admins', {}).items() if group_id in groups}
+    owner_id = admin_data.get('owner')
+    if owner_id:
+        group_admins.add(owner_id)
+
+    notification_text = (
+        f"🔔 <b>Refusal Notification</b> 🔔\n\n"
+        f"User: {display_name}\n"
+        f"Group ID: {group_id}\n"
+        f"Refused {game['type']}: <i>{html.escape(game['text'])}</i>"
+    )
+
+    for admin_id in group_admins:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=notification_text, parse_mode='HTML')
+        except Exception as e:
+            logger.warning(f"Failed to notify admin {admin_id} of dare refusal: {e}")
+
+    original_text = query.message.text
+    new_text = f"{original_text}\n\n<i>This was refused by the user.</i>"
+    await query.edit_message_text(new_text, reply_markup=None, parse_mode='HTML')
+
+    del active_games[tod_game_id]
+    await save_active_tod_games(active_games)
+    return ConversationHandler.END
+
+
+async def tod_start_proof_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the user accepting to provide proof for a truth or dare."""
+    query = update.callback_query
+
+    try:
+        _, _, tod_game_id = query.data.split(':')
+    except ValueError:
+        logger.error(f"Could not parse tod_start_proof_handler callback data: {query.data}")
+        await query.answer("An error occurred.", show_alert=True)
+        return ConversationHandler.END
+
+    active_games = await load_active_tod_games()
+    game = active_games.get(tod_game_id)
+
+    if not game:
+        await query.answer("This game session has expired or is invalid.", show_alert=True)
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return ConversationHandler.END
+
+    if query.from_user.id != game['user_id']:
+        await query.answer("This is not your dare to accept!", show_alert=True)
+        return TOD_ACCEPTANCE
+
+    game['status'] = 'awaiting_proof'
+    game['timestamp'] = time.time()
+    active_games[tod_game_id] = game
+    await save_active_tod_games(active_games)
+
+    original_text = query.message.text
+
+    proof_prompt = ""
+    if game['type'] == 'truth':
+        proof_prompt = "Please now send your answer as a text message or voice note."
+    else:
+        proof_prompt = "Please now send a photo or video as proof."
+
+    new_text = f"{original_text}\n\n<b>Waiting for proof...</b>\n{proof_prompt}"
+
+    await query.edit_message_text(new_text, reply_markup=None, parse_mode='HTML')
+    await query.answer("Please send your proof.")
+    return TOD_PROOF
+
+
+async def _create_tod_management_message(group_id: str, list_type: str, page: int = 0):
+    """Helper function to generate the text and markup for the ToD management interface."""
+    tod_data = await load_tod_data()
+    items = tod_data.get(group_id, {}).get(list_type, [])
+
+    if not items:
+        return f"The list of {list_type} is empty for this group.", None
+
+    ITEMS_PER_PAGE = 5
+    start_index = page * ITEMS_PER_PAGE
+
+    if start_index >= len(items) and page > 0:
+        page -= 1
+        start_index = page * ITEMS_PER_PAGE
+
+    end_index = start_index + ITEMS_PER_PAGE
+    paginated_items = items[start_index:end_index]
+
+    if not paginated_items and page == 0:
+        return f"The list of {list_type} is now empty.", None
+
+    total_pages = -(-len(items) // ITEMS_PER_PAGE)
+    text = f"<b>Managing {list_type.capitalize()}</b> (Page {page + 1} of {total_pages}):\n\n"
+    keyboard = []
+    for i, item_text in enumerate(paginated_items):
+        actual_index = start_index + i
+        button_text = (item_text[:20] + '...') if len(item_text) > 20 else item_text
+        keyboard.append([
+            InlineKeyboardButton(f"❌ {button_text}", callback_data=f'managetod:remove:{list_type}:{actual_index}:{page}')
+        ])
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f'managetod:view:{list_type}:{page - 1}'))
+    if end_index < len(items):
+        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f'managetod:view:{list_type}:{page + 1}'))
+
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+    keyboard.append([InlineKeyboardButton("Done", callback_data='managetod:done')])
+
+    return text, InlineKeyboardMarkup(keyboard)
+
+@command_handler_wrapper(admin_only=True)
+async def timer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /timer {minutes} - Sets the auto-delete timer for bot messages in this group. """
+    if update.effective_chat.type == "private":
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
+        return
+
+    if not context.args:
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /timer <minutes>\nUse 0 to disable the timer.")
+        return
+
+    try:
+        minutes = int(context.args[0])
+        if minutes < 0:
+            raise ValueError
+    except ValueError:
+        await send_message_and_track(context, update.effective_chat.id, "Please provide a valid, non-negative number of minutes.")
+        return
+
+    group_id = str(update.effective_chat.id)
+    timers = load_message_timers()
+
+    if minutes == 0:
+        timers[group_id] = 0
+        save_message_timers(timers)
+        await send_message_and_track(context, update.effective_chat.id, "Bot message auto-deletion has been disabled for this group.")
+    else:
+        timers[group_id] = minutes * 60
+        save_message_timers(timers)
+        await send_message_and_track(context, update.effective_chat.id, f"Bot messages in this group will now be deleted after {minutes} minute(s).")
+
+
+@command_handler_wrapper(admin_only=True)
+async def notimer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /notimer (as a reply) - Prevents a specific bot message from being auto-deleted. """
+    if not update.message.reply_to_message:
+        await send_message_and_track(context, update.effective_chat.id, "Please use this command as a reply to the message you want to keep.")
+        return
+
+    if update.message.reply_to_message.from_user.id != context.bot.id:
+        await send_message_and_track(context, update.effective_chat.id, "This command only works on messages sent by me.")
+        return
+
+    message_to_keep = update.message.reply_to_message
+    group_id_str = str(message_to_keep.chat.id)
+
+    tracked_messages = load_tracked_messages()
+
+    if group_id_str not in tracked_messages:
+        await send_message_and_track(context, update.effective_chat.id, "This message is not being tracked for deletion.")
+        return
+
+    initial_count = len(tracked_messages[group_id_str])
+    tracked_messages[group_id_str] = [
+        msg for msg in tracked_messages[group_id_str]
+        if msg['message_id'] != message_to_keep.message_id
+    ]
+
+    if len(tracked_messages[group_id_str]) == initial_count:
+        await send_message_and_track(context, update.effective_chat.id, "This message was not found in the deletion queue.")
+    else:
+        save_tracked_messages(tracked_messages)
+        await send_message_and_track(context, update.effective_chat.id, "Okay, I will not delete that message.")
+
+
+@command_handler_wrapper(admin_only=True)
+async def managetod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(Admin) /managetod - Manage the list of truths and dares for this group."""
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("This command can only be used in group chats.")
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Manage Truths", callback_data='managetod:view:truths:0'),
+            InlineKeyboardButton("Manage Dares", callback_data='managetod:view:dares:0')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Please choose which list you want to manage:", reply_markup=reply_markup)
+
+async def manage_tod_view_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(Admin) Displays a paginated list of truths or dares with remove buttons."""
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split(':')
+    list_type = parts[2]
+    page = int(parts[3]) if len(parts) > 3 else 0
+
+    group_id = str(query.message.chat.id)
+
+    text, reply_markup = await _create_tod_management_message(group_id, list_type, page)
+
+    if not reply_markup:
+        await query.edit_message_text(text)
+    else:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+
+async def manage_tod_remove_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(Admin) Removes a single truth or dare and refreshes the view."""
+    query = update.callback_query
+
+    _, _, list_type, index_str, page_str = query.data.split(':')
+    index_to_remove = int(index_str)
+    page = int(page_str)
+
+    group_id = str(query.message.chat.id)
+    tod_data = await load_tod_data()
+
+    items = tod_data.get(group_id, {}).get(list_type, [])
+
+    if index_to_remove < len(items):
+        removed_item = items.pop(index_to_remove)
+        await save_tod_data(tod_data)
+        await query.answer(f"Removed: {removed_item[:30]}...")
+    else:
+        await query.answer("Item not found. It might have been already removed.", show_alert=True)
+        return
+
+    text, reply_markup = await _create_tod_management_message(group_id, list_type, page)
+
+    if not reply_markup:
+        await query.edit_message_text(text)
+    else:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+
+async def manage_tod_done_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(Admin) Cleans up the management message."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("Management session finished.")
+
+
+async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles a user's message to see if it's a valid proof for an active T-or-D game."""
+    if not update.message:
+        return TOD_PROOF
+
+    user = update.effective_user
+    chat_id = str(update.effective_chat.id)
+    message = update.message
+
+    active_games = await load_active_tod_games()
+
+    game_to_complete_id = None
+    game_details = None
+    for game_id, game in active_games.items():
+        if game.get('user_id') == user.id and game.get('group_id') == chat_id and game.get('status') == 'awaiting_proof':
+            game_to_complete_id = game_id
+            game_details = game
+            break
+
+    if not game_to_complete_id:
+        # This message is not part of an active ToD game for this user, so we ignore it.
+        # By returning a state, we stay in the conversation, but this handler won't be triggered again for this message.
+        # This case should ideally not be hit if the conversation handler is working correctly.
+        return TOD_PROOF
+
+    is_valid_proof = False
+    if game_details['type'] == 'dare' and (message.photo or message.video):
+        is_valid_proof = True
+    elif game_details['type'] == 'truth' and (message.text or message.voice):
+        is_valid_proof = True
+
+    if is_valid_proof:
+        await add_user_points(int(chat_id), user.id, 15, context)
+
+        display_name = get_display_name(user.id, user.full_name, int(chat_id))
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🎉 {display_name} has completed their {game_details['type']} and earned 15 points! 🎉",
+            parse_mode='HTML'
+        )
+
+        try:
+            await context.bot.edit_message_text(
+                chat_id=game_details['chat_id'],
+                message_id=game_details['message_id'],
+                text=f"The user completed the {game_details['type']}:\n\n<i>{html.escape(game_details['text'])}</i>",
+                reply_markup=None,
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.error(f"Could not edit original ToD message after proof: {e}")
+
+        del active_games[game_to_complete_id]
+        await save_active_tod_games(active_games)
+        context.user_data.clear()
+        return ConversationHandler.END
+    else:
+        expected_proof = "a photo or video" if game_details['type'] == 'dare' else "a text message or voice note"
+        await message.reply_text(f"That's not the right kind of proof for a {game_details['type']}. Please send {expected_proof}.")
+        return TOD_PROOF
+
+
+# Persistent storage for disabled commands per group
 def load_disabled_commands():
     if os.path.exists(DISABLED_COMMANDS_FILE):
         with open(DISABLED_COMMANDS_FILE, 'r', encoding='utf-8') as f:
@@ -2767,7 +3549,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # In a group, just give a prompt to start a private chat.
     if update.effective_chat.type != "private":
-        await update.message.reply_text("Please message me in private to use /start.")
+        await send_message_and_track(context, update.effective_chat.id, "Please message me in private to use /start.")
         try:
             # Also send the welcome message privately if possible
             await context.bot.send_message(
@@ -2789,7 +3571,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Shows the interactive help menu.
     """
     if update.effective_chat.type != "private":
-        await update.message.reply_text("Please use the /help command in a private chat with me for a better experience.")
+        await send_message_and_track(context, update.effective_chat.id, "Please use the /help command in a private chat with me for a better experience.")
         return
 
     user_id = update.effective_user.id
@@ -2831,6 +3613,8 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 <b>Game Commands</b>
 - /newgame (reply to user): Challenge someone to a game of Dice, Connect Four, Battleship, or Tic-Tac-Toe.
 - /chance: Play a daily game of chance for points or other outcomes.
+- /dareme: Starts a solo game of Truth or Dare.
+- /addtod: Contribute new questions to the Truth or Dare list.
         """
     elif topic == 'help_points':
         text = """
@@ -2845,12 +3629,16 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = """
 <b>Admin Commands</b>
 
+- /timer &lt;minutes&gt;: Sets an auto-delete timer for the bot's messages in this group (0 to disable).
+- /notimer (reply to message): Prevents a specific bot message from being auto-deleted.
 - /title &lt;user_id&gt; &lt;title&gt;: Sets a custom title for a user.
 - /removetitle &lt;user_id&gt;: Removes a title from a user.
 - /update: (Owner only, in group) Adds all admins from the current group to the bot's global admin list.
 - /removeadmin &lt;user_id&gt;: (Owner only) Removes a user from the bot's global admin list.
 - /viewstakes &lt;user_id or @username&gt;: (Private chat only) View all media staked by a user.
 - /loser &lt;user_id&gt;: Declare a user as the loser of the current game.
+- /stopgame: Manually stops the current 2-player game in the group.
+- /stopdare: Manually stops the current Truth or Dare game in the group.
 - /cleangames: Cleans up old, completed game data.
 - /top5: See the top 5 users with the most points.
 - /addpoints &lt;user_id&gt; &lt;amount&gt;: Add points to a user.
@@ -2907,6 +3695,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # =============================
 GAME_SELECTION, ROUND_SELECTION, STAKE_TYPE_SELECTION, STAKE_SUBMISSION_POINTS, STAKE_SUBMISSION_MEDIA, OPPONENT_SELECTION, CONFIRMATION, FREE_REWARD_SELECTION, ASK_TASK_TARGET, ASK_TASK_DESCRIPTION = range(10)
 
+# States for the Truth or Dare conversation
+TOD_CHOICE, TOD_ACCEPTANCE, TOD_PROOF = range(10, 13)
+
+
 async def start_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the game setup conversation."""
     query = update.callback_query
@@ -2934,23 +3726,28 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
     _, game_type, game_id = query.data.split(':')
-    await update_game_activity(game_id)
+
+    # Check if the game is still valid before proceeding
     games_data = await load_games_data_async()
-    games_data[game_id]['game_type'] = game_type
+    game = games_data.get(game_id)
+    if not game or game.get('status') == 'complete':
+        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    await update_game_activity(game_id)
+    game['game_type'] = game_type
 
     if game_type == 'connect_four':
-        # Initialize Connect Four board (6 rows, 7 columns)
-        games_data[game_id]['board'] = [[0 for _ in range(7)] for _ in range(6)]
-        # Challenger goes first
-        games_data[game_id]['turn'] = games_data[game_id]['challenger_id']
+        game['board'] = [[0 for _ in range(7)] for _ in range(6)]
+        game['turn'] = game['challenger_id']
     elif game_type == 'tictactoe':
-        # Initialize Tic-Tac-Toe board (3x3)
-        games_data[game_id]['board'] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
-        # Challenger (X) goes first
-        games_data[game_id]['turn'] = games_data[game_id]['challenger_id']
+        game['board'] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+        game['turn'] = game['challenger_id']
 
     await save_games_data_async(games_data)
 
+    # Standard flow for non-revenge games
     if game_type == 'dice':
         keyboard = [
             [InlineKeyboardButton("Best of 3", callback_data=f'rounds:3:{game_id}')],
@@ -2959,23 +3756,16 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            text="How many rounds would you like to play?",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text(text="How many rounds would you like to play?", reply_markup=reply_markup)
         return ROUND_SELECTION
     else:
-        # Placeholder for other games
         keyboard = [
             [InlineKeyboardButton("Points", callback_data=f'stake:points:{game_id}')],
             [InlineKeyboardButton("Media (Photo, Video, Voice Note)", callback_data=f'stake:media:{game_id}')],
             [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            text="What would you like to stake?",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text(text="What would you like to stake?", reply_markup=reply_markup)
         return STAKE_TYPE_SELECTION
 
 async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2983,14 +3773,23 @@ async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
     _, rounds_str, game_id = query.data.split(':')
+
+    # Check if the game is still valid before proceeding
+    games_data = await load_games_data_async()
+    game = games_data.get(game_id)
+    if not game or game.get('status') == 'complete':
+        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     await update_game_activity(game_id)
     rounds = int(rounds_str)
 
     context.user_data['game_id'] = game_id
-    games_data = await load_games_data_async()
-    games_data[game_id]['rounds_to_play'] = rounds
+    game['rounds_to_play'] = rounds
     await save_games_data_async(games_data)
 
+    # Standard flow for non-revenge games
     keyboard = [
         [InlineKeyboardButton("Points", callback_data=f'stake:points:{game_id}')],
         [InlineKeyboardButton("Media (Photo, Video, Voice Note)", callback_data=f'stake:media:{game_id}')],
@@ -3009,11 +3808,37 @@ async def stake_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     _, stake_type, game_id = query.data.split(':')
+
+    # Check if the game is still valid before proceeding
+    games_data = await load_games_data_async()
+    game = games_data.get(game_id)
+    if not game or game.get('status') == 'complete':
+        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     context.user_data['game_id'] = game_id
 
     if stake_type == 'points':
-        await query.edit_message_text(text="How many points would you like to stake?")
-        return STAKE_SUBMISSION_POINTS
+        user_id = query.from_user.id
+        group_id = game['group_id']
+        user_points = get_user_points(group_id, user_id)
+
+        if user_points <= 0:
+            keyboard = [
+                [InlineKeyboardButton("Stake Media Instead", callback_data=f'stake:media:{game_id}')],
+                [InlineKeyboardButton("Cancel", callback_data=f'cancel_game:{game_id}')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                text="You have 0 points and cannot stake them. Please stake media instead or cancel the game.",
+                reply_markup=reply_markup
+            )
+            return STAKE_TYPE_SELECTION # Stay in the same state, but show new options
+        else:
+            await query.edit_message_text(text=f"You have {user_points} points. How many would you like to stake?")
+            return STAKE_SUBMISSION_POINTS
+
     elif stake_type == 'media':
         await query.edit_message_text(text="Please send the media file you would like to stake (photo, video, or voice note).")
         return STAKE_SUBMISSION_MEDIA
@@ -3021,13 +3846,21 @@ async def stake_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
 async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the submission of points as a stake."""
     logger.debug("In stake_submission_points")
+    game_id = context.user_data.get('game_id')
+
+    # Check if the game is still valid before proceeding
+    games_data = await load_games_data_async()
+    game = games_data.get(game_id)
+    if not game or game.get('status') == 'complete':
+        await update.message.reply_text("This game has been cancelled or is no longer valid.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     try:
         points = int(update.message.text)
         user_id = update.effective_user.id
-        game_id = context.user_data['game_id']
         await update_game_activity(game_id)
-        games_data = await load_games_data_async()
-        group_id = games_data[game_id]['group_id']
+        group_id = game['group_id']
 
         user_points = get_user_points(group_id, user_id)
 
@@ -3065,6 +3898,16 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
 async def stake_submission_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the submission of media as a stake."""
     logger.debug("In stake_submission_media")
+    game_id = context.user_data.get('game_id')
+
+    # Check if the game is still valid before proceeding
+    games_data = await load_games_data_async()
+    game = games_data.get(game_id)
+    if not game or game.get('status') == 'complete':
+        await update.message.reply_text("This game has been cancelled or is no longer valid.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     message = update.message
     file_id = None
     media_type = None
@@ -3285,6 +4128,15 @@ async def confirm_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     _, role, game_id = query.data.split(':')
+
+    # Check if the game is still valid before proceeding
+    games_data = await load_games_data_async()
+    game = games_data.get(game_id)
+    if not game or game.get('status') == 'complete':
+        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     await update_game_activity(game_id)
 
     if role == 'challenger':
@@ -3483,81 +4335,36 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
             )
         except telegram.error.Forbidden:
             opponent_member = await context.bot.get_chat_member(game['group_id'], user_id)
-            bot_username = context.bot.username
-            await context.bot.send_message(
-                chat_id=game['group_id'],
-                text=f'{opponent_member.user.mention_html()}, I can\'t send you a private message because you haven\'t started a chat with me. '
-                     f'Please <a href="https://t.me/{bot_username}">start a chat with me</a> and then click \'Accept\' on the challenge again.',
-                parse_mode='HTML'
+            bot_username = (await context.bot.get_me()).username
+
+            # Edit the original challenge message to reflect cancellation
+            await query.edit_message_text(
+                f"Challenge accepted by {opponent_member.user.mention_html()}, but the game has been cancelled. "
+                f"{opponent_member.user.mention_html()}, I can't send you a private message. "
+                f'Please <a href="https://t.me/{bot_username}">start a chat with me</a> before accepting challenges.',
+                parse_mode='HTML',
+                reply_markup=None
             )
 
-    elif response_type == 'refuse':
-        if game.get('is_revenge'):
-            # --- Revenge Refusal Logic ---
-            old_game_id = game.get('old_game_id')
-            if not old_game_id or old_game_id not in games_data:
-                # Fallback if old game data is missing
-                refuser_name = get_display_name(game['opponent_id'], update.effective_user.full_name, game['group_id'])
-                await context.bot.send_message(
-                    chat_id=game['group_id'],
-                    text=f"{refuser_name} has refused the revenge match, but the original game data was not found.",
-                    parse_mode='HTML'
-                )
-            else:
-                old_game = games_data[old_game_id]
-                refuser_id = old_game['winner_id']
-                challenger_id = old_game['loser_id']
-
-                # Determine the refuser's stake from the old game
-                refuser_stake = old_game.get('challenger_stake') if str(old_game['challenger_id']) == str(refuser_id) else old_game.get('opponent_stake')
-
-                refuser_member = await context.bot.get_chat_member(game['group_id'], refuser_id)
-                challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
-                refuser_name = get_display_name(refuser_id, refuser_member.user.full_name, game['group_id'])
-                challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
-
-                if refuser_stake:
-                    if refuser_stake['type'] == 'points':
-                        points_val = refuser_stake['value']
-                        await add_user_points(game['group_id'], challenger_id, points_val, context)
-                        await add_user_points(game['group_id'], refuser_id, -points_val, context)
-                        await context.bot.send_message(
-                            game['group_id'],
-                            f"{refuser_name} has refused the revenge match and forfeited {points_val} points to {challenger_name}!",
-                            parse_mode='HTML'
-                        )
-                    else: # media
-                        media_type = refuser_stake['type']
-                        file_id = refuser_stake['value']
-                        caption = f"{refuser_name} has refused the revenge match and forfeited their stake to {challenger_name}!"
-                        if media_type == 'photo':
-                            await context.bot.send_photo(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                        elif media_type == 'video':
-                            await context.bot.send_video(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                        elif media_type == 'voice':
-                            await context.bot.send_voice(game['group_id'], file_id, caption=caption, parse_mode='HTML')
-                else:
-                     await context.bot.send_message(
-                        game['group_id'],
-                        f"{refuser_name} has refused the revenge match, but no stake was found in the original game.",
-                        parse_mode='HTML'
-                    )
-
-            # Clean up the revenge game
-            del games_data[game_id]
+            # Clean up the game to prevent limbo state (no-fault cancellation)
+            # Note: We are modifying the `games_data` dictionary directly.
+            game['status'] = 'complete'
             await save_games_data_async(games_data)
-            await query.edit_message_text("Revenge challenge refused.")
-            return
+            await delete_tracked_messages(context, game_id)
+            logger.info(f"Cleaned up limbo game {game_id} due to opponent PM failure.")
 
+    elif response_type == 'refuse':
         challenger_id = game['challenger_id']
         challenger_stake = game['challenger_stake']
 
         challenger_member = await context.bot.get_chat_member(game['group_id'], challenger_id)
         challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
 
-        await context.bot.send_message(
-            chat_id=challenger_id,
-            text=f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name, game['group_id'])}.",
+        await send_and_track_message(
+            context,
+            challenger_id,
+            game_id,
+            f"Your challenge was refused by {get_display_name(update.effective_user.id, update.effective_user.full_name, game['group_id'])}.",
             parse_mode='HTML'
         )
 
@@ -3566,7 +4373,8 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
             message = f"{challenger_name.capitalize()} is a loser for being refused! They lost {challenger_stake['value']} points."
             if 'fag' in challenger_name:
                 message = f"The {challenger_name} is a loser for being refused! They lost {challenger_stake['value']} points."
-            await context.bot.send_message(
+            await send_message_and_track(
+                context,
                 game['group_id'],
                 message,
                 parse_mode='HTML'
@@ -3576,11 +4384,11 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
             if 'fag' in challenger_name:
                 caption = f"The {challenger_name} is a loser for being refused! This was their stake."
             if challenger_stake['type'] == 'photo':
-                await context.bot.send_photo(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
             elif challenger_stake['type'] == 'video':
-                await context.bot.send_video(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
             elif challenger_stake['type'] == 'voice':
-                await context.bot.send_voice(game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
 
         del games_data[game_id]
         await save_games_data_async(games_data)
@@ -3650,6 +4458,7 @@ async def post_init(application: Application) -> None:
     context = CallbackContext(application=application)
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_game_inactivity, 'interval', minutes=1, args=[context])
+    scheduler.add_job(delete_expired_messages, 'interval', minutes=1, args=[context])
     scheduler.start()
 
 
@@ -3675,6 +4484,7 @@ if __name__ == '__main__':
     add_command(app, 'newgame', newgame_command)
     add_command(app, 'loser', loser_command)
     add_command(app, 'stopgame', stopgame_command)
+    add_command(app, 'stopdare', stopdare_command)
     add_command(app, 'cleangames', cleangames_command)
     add_command(app, 'chance', chance_command)
     add_command(app, 'reward', reward_command)
@@ -3687,12 +4497,32 @@ if __name__ == '__main__':
     add_command(app, 'removetitle', removetitle_command)
     add_command(app, 'update', update_command)
     add_command(app, 'viewstakes', viewstakes_command)
+    add_command(app, 'addtod', addtod_command)
+    add_command(app, 'managetod', managetod_command)
+    add_command(app, 'timer', timer_command)
+    add_command(app, 'notimer', notimer_command)
 
     # Add the conversation handler with a high priority
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_handler), group=-1)
 
     # Add the unknown command handler with a low priority to catch anything not handled yet
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler), group=1)
+
+    # Truth or Dare conversation handler
+    tod_conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler('dareme', dareme_command)],
+        states={
+            TOD_CHOICE: [CallbackQueryHandler(tod_choice_handler, pattern=r'^tod:choice:.*')],
+            TOD_ACCEPTANCE: [
+                CallbackQueryHandler(tod_start_proof_handler, pattern=r'^tod:start_proof:.*'),
+                CallbackQueryHandler(tod_refuse_handler, pattern=r'^tod:refuse:.*')
+            ],
+            TOD_PROOF: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VOICE, tod_handle_proof_submission)],
+        },
+        fallbacks=[CommandHandler('cancel', tod_cancel)],
+        per_user=True,
+        per_chat=True,
+    )
 
     # Separate conversation handlers for challenger and opponent to avoid state conflicts.
     shared_game_setup_states = {
@@ -3717,7 +4547,7 @@ if __name__ == '__main__':
         states=shared_game_setup_states,
         fallbacks=shared_game_setup_fallbacks,
         per_user=True,
-        per_chat=False,
+        per_chat=True,
     )
 
     opponent_game_setup_handler = ConversationHandler(
@@ -3725,7 +4555,7 @@ if __name__ == '__main__':
         states=shared_game_setup_states,
         fallbacks=shared_game_setup_fallbacks,
         per_user=True,
-        per_chat=False,
+        per_chat=True,
     )
 
     # Battleship placement handler
@@ -3735,19 +4565,27 @@ if __name__ == '__main__':
             BS_AWAITING_PLACEMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, bs_handle_placement)],
         },
         fallbacks=[CommandHandler('cancel', bs_placement_cancel)],
-        conversation_timeout=600  # 10 minutes to place all ships
+        conversation_timeout=600,  # 10 minutes to place all ships
+        per_user=True,
+        per_chat=True,
     )
+    app.add_handler(tod_conversation_handler)
     app.add_handler(battleship_placement_handler)
-
     app.add_handler(challenger_game_setup_handler)
     app.add_handler(opponent_game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
-    app.add_handler(CallbackQueryHandler(revenge_handler, pattern=r'^game:revenge:.*'))
+    app.add_handler(CallbackQueryHandler(addtod_type_handler, pattern=r'^addtod:(truth|dare)$'))
     app.add_handler(CallbackQueryHandler(connect_four_move_handler, pattern=r'^c4:move:.*'))
     app.add_handler(CallbackQueryHandler(tictactoe_move_handler, pattern=r'^ttt:move:.*'))
     app.add_handler(CallbackQueryHandler(bs_select_col_handler, pattern=r'^bs:col:.*'))
     app.add_handler(CallbackQueryHandler(bs_back_to_col_select_handler, pattern=r'^bs:back_to_col_select:.*'))
     app.add_handler(CallbackQueryHandler(bs_attack_handler, pattern=r'^bs:attack:.*'))
+    app.add_handler(CallbackQueryHandler(tod_choice_handler, pattern=r'^tod:choice:.*'))
+    app.add_handler(CallbackQueryHandler(tod_refuse_handler, pattern=r'^tod:refuse:.*'))
+    app.add_handler(CallbackQueryHandler(tod_start_proof_handler, pattern=r'^tod:start_proof:.*'))
+    app.add_handler(CallbackQueryHandler(manage_tod_view_handler, pattern=r'^managetod:view:.*'))
+    app.add_handler(CallbackQueryHandler(manage_tod_remove_handler, pattern=r'^managetod:remove:.*'))
+    app.add_handler(CallbackQueryHandler(manage_tod_done_handler, pattern=r'^managetod:done'))
     app.add_handler(CallbackQueryHandler(help_menu_handler, pattern=r'^help_'))
     app.add_handler(MessageHandler(filters.Dice(), dice_roll_handler))
 
