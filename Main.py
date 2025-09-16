@@ -62,7 +62,6 @@ TRACKED_MESSAGES_FILE = os.path.join(BASE_DIR, 'tracked_messages.json')
 USER_TITLES_FILE = os.path.join(BASE_DIR, 'user_titles.json')
 REWARDS_DATA_FILE = os.path.join(BASE_DIR, 'rewards.json')
 POINTS_DATA_FILE = os.path.join(BASE_DIR, 'points.json')
-NEGATIVE_POINTS_TRACKER_FILE = os.path.join(BASE_DIR, 'negative_points_tracker.json')
 CHANCE_COOLDOWNS_FILE = os.path.join(BASE_DIR, 'chance_cooldowns.json')
 GAMES_DATA_FILE = os.path.join(BASE_DIR, 'games.json')
 PUNISHMENTS_DATA_FILE = os.path.join(BASE_DIR, 'punishments.json')
@@ -70,6 +69,8 @@ PUNISHMENT_STATUS_FILE = os.path.join(BASE_DIR, 'punishment_status.json')
 MEDIA_STAKES_FILE = os.path.join(BASE_DIR, 'media_stakes.json')
 USER_PROFILES_FILE = os.path.join(BASE_DIR, 'user_profiles.json')
 DISABLED_COMMANDS_FILE = os.path.join(BASE_DIR, 'disabled_commands.json')
+SNOOZE_SETTINGS_FILE = os.path.join(BASE_DIR, 'snooze_settings.json')
+SNOOZED_DARES_FILE = os.path.join(BASE_DIR, 'snoozed_dares.json')
 
 
 # =========================
@@ -707,94 +708,37 @@ async def add_user_points(group_id, user_id, delta, context: ContextTypes.DEFAUL
     set_user_points(group_id, user_id, new_points)
     logger.debug(f"Added {delta} points for user {user_id} in group {group_id} (new total: {new_points})")
 
-    # If user's points are non-negative, reset their negative strike counter for this group.
-    if new_points >= 0:
-        tracker = load_negative_tracker()
-        group_id_str = str(group_id)
-        user_id_str = str(user_id)
-        if group_id_str in tracker and user_id_str in tracker.get(group_id_str, {}):
-            if tracker[group_id_str][user_id_str] != 0:
-                tracker[group_id_str][user_id_str] = 0
-                save_negative_tracker(tracker)
-                logger.debug(f"Reset negative points tracker for user {user_id_str} in group {group_id_str}.")
-
     # Run all punishment checks
     await check_for_punishment(group_id, user_id, old_points, new_points, context)
-    await check_for_negative_points(group_id, user_id, new_points, context)
+    await check_for_negative_points(group_id, user_id, old_points, new_points, context)
 
-# =============================
-# Negative Points Tracker
-# =============================
-def load_negative_tracker():
-    if os.path.exists(NEGATIVE_POINTS_TRACKER_FILE):
-        with open(NEGATIVE_POINTS_TRACKER_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
-
-def save_negative_tracker(data):
-    with open(NEGATIVE_POINTS_TRACKER_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-async def check_for_negative_points(group_id, user_id, points, context: ContextTypes.DEFAULT_TYPE):
-    # Punishments do not apply in private chats
-    chat = await context.bot.get_chat(group_id)
-    if chat.type == 'private':
+async def check_for_negative_points(group_id, user_id, old_points, new_points, context: ContextTypes.DEFAULT_TYPE):
+    """Sends a warning if a user's points cross from non-negative to negative."""
+    # This check ensures the warning is sent only once when crossing the threshold.
+    if new_points >= 0 or old_points < 0:
         return
 
-    if points < 0:
-        tracker = load_negative_tracker()
-        group_id_str = str(group_id)
-        user_id_str = str(user_id)
+    # Warnings do not apply in private chats
+    try:
+        chat = await context.bot.get_chat(group_id)
+        if chat.type == 'private':
+            return
+    except Exception:
+        # If we can't get chat info, we probably shouldn't send a message.
+        logger.warning(f"Could not retrieve chat info for group {group_id} in check_for_negative_points.")
+        return
 
-        if group_id_str not in tracker:
-            tracker[group_id_str] = {}
-
-        current_strikes = tracker.get(group_id_str, {}).get(user_id_str, 0)
-        current_strikes += 1
-        tracker[group_id_str][user_id_str] = current_strikes
-        save_negative_tracker(tracker)
-
+    try:
         user_member = await context.bot.get_chat_member(group_id, user_id)
-        user_mention = user_member.user.mention_html()
+        display_name = get_display_name(user_id, user_member.user.full_name, group_id)
 
-        if current_strikes < 3:
-            # On the first and second strike, mute for 24h and reset points.
-            try:
-                await context.bot.restrict_chat_member(
-                    chat_id=group_id,
-                    user_id=user_id,
-                    permissions={'can_send_messages': False},
-                    until_date=time.time() + 86400  # 24 hours
-                )
-                set_user_points(group_id, user_id, 0) # Reset points to 0
-                await context.bot.send_message(
-                    chat_id=group_id,
-                    text=f"{user_mention} has dropped into negative points (Strike {current_strikes}/3). They have been muted for 24 hours and their points reset to 0.",
-                    parse_mode='HTML'
-                )
-            except Exception:
-                logger.exception(f"Failed to mute user {user_id} for negative points (Strike {current_strikes}).")
-        else:
-            # On the third strike, send a special message and notify admins.
-            tracker[group_id_str][user_id_str] = 0  # Reset strikes after 3rd strike
-            save_negative_tracker(tracker)
-
-            chat = await context.bot.get_chat(group_id)
-            admins = await context.bot.get_chat_administrators(group_id)
-            await context.bot.send_message(
-                chat_id=group_id,
-                text=f"🚨 <b>Third Strike!</b> 🚨\n{user_mention} has reached negative points for the third time. A special punishment from the admins is coming, and you are not allowed to refuse if you wish to remain in the group.",
-                parse_mode='HTML'
-            )
-            for admin in admins:
-                try:
-                    await context.bot.send_message(
-                        chat_id=admin.user.id,
-                        text=f"User {user_mention} in group '{chat.title}' has reached negative points for the third time and requires a special punishment. Their strike counter has been reset.",
-                        parse_mode='HTML'
-                    )
-                except Exception:
-                    logger.warning(f"Failed to notify admin {admin.user.id} about 3rd strike.")
+        message = (
+            f"⚠️ {display_name}, your points balance has dropped into the negative ({new_points} points). "
+            f"You will not be able to buy rewards or bet points in games until your balance is positive again."
+        )
+        await send_message_and_track(context, group_id, message, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"Failed to send negative points warning for user {user_id} in group {group_id}: {e}")
 
 # =============================
 # Chance Game Helpers
@@ -843,12 +787,33 @@ TOD_DATA_LOCK = asyncio.Lock()
 ACTIVE_TOD_GAMES_LOCK = asyncio.Lock()
 
 async def load_tod_data():
-    """Asynchronously loads truth or dare data from the JSON file with a lock."""
+    """Asynchronously loads truth or dare data from the JSON file with a lock, and migrates old data if necessary."""
     async with TOD_DATA_LOCK:
-        if os.path.exists(TOD_DATA_FILE):
-            with open(TOD_DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
+        if not os.path.exists(TOD_DATA_FILE):
+            return {}
+
+        with open(TOD_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # --- Migration logic for old string-based ToD lists ---
+        migrated = False
+        for group_id, tod_lists in data.items():
+            for list_type in ['truths', 'dares']:
+                if list_type in tod_lists and tod_lists[list_type]:
+                    # Check if the first item is a string (indicative of the old format)
+                    if isinstance(tod_lists[list_type][0], str):
+                        migrated = True
+                        logger.info(f"Migrating {list_type} for group {group_id} to new object format.")
+                        # Convert all strings in the list to the new format with a default of 15 points
+                        tod_lists[list_type] = [{'text': item, 'points': 15} for item in tod_lists[list_type]]
+
+        if migrated:
+            logger.info("Migration complete. Saving updated truth_or_dare.json file.")
+            # Save synchronously within the lock as this is a one-time operation.
+            with open(TOD_DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return data
 
 async def save_tod_data(data):
     """Asynchronously saves truth or dare data to the JSON file with a lock."""
@@ -869,6 +834,26 @@ async def save_active_tod_games(data):
     async with ACTIVE_TOD_GAMES_LOCK:
         with open(ACTIVE_TOD_GAMES_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_snooze_settings():
+    if os.path.exists(SNOOZE_SETTINGS_FILE):
+        with open(SNOOZE_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_snooze_settings(data):
+    with open(SNOOZE_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_snoozed_dares():
+    if os.path.exists(SNOOZED_DARES_FILE):
+        with open(SNOOZED_DARES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_snoozed_dares(data):
+    with open(SNOOZED_DARES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 # =============================
@@ -2110,29 +2095,35 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if AWAITING_TOD_CONTENT in context.user_data:
         state = context.user_data[AWAITING_TOD_CONTENT]
         add_type = state.get('type')
-        if not add_type:
-            await update.message.reply_text("Something went wrong, please start over with /addtod.")
+        points = state.get('points')
+
+        if not add_type or points is None:
+            await update.message.reply_text("Something went wrong (missing type or points), please start over with /addtod.")
             context.user_data.clear()
             return
 
         group_id = str(update.effective_chat.id)
-        new_items = [item.strip() for item in update.message.text.split('\n') if item.strip()]
 
-        if not new_items:
+        # Create a list of new item objects from the message text
+        new_items_text = [item.strip() for item in update.message.text.split('\n') if item.strip()]
+        if not new_items_text:
             await update.message.reply_text("I didn't receive any content. Please try again, or /cancel to exit.")
             return
+
+        new_items_obj = [{'text': text, 'points': points} for text in new_items_text]
 
         tod_data = await load_tod_data()
         if group_id not in tod_data:
             tod_data[group_id] = {"truths": [], "dares": []}
 
         list_key = f"{add_type}s"
-        tod_data[group_id].setdefault(list_key, []).extend(new_items)
+        tod_data[group_id].setdefault(list_key, []).extend(new_items_obj)
 
         await save_tod_data(tod_data)
 
-        await update.message.reply_text(f"Successfully added {len(new_items)} new {add_type}(s)!")
-        context.user_data.pop(AWAITING_TOD_CONTENT, None)
+        await update.message.reply_text(f"Successfully added {len(new_items_obj)} new {add_type}(s), each worth {points} points!")
+        context.user_data.pop(AWAITING_TOD_CONTENT, None) # Clear the state
+        context.user_data.pop('addtod_type', None) # Clean up intermediate state
         return
 
     # === Add Reward Flow: Step 2 (Cost) ===
@@ -2217,6 +2208,10 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data.pop(REWARD_STATE, None)
             return
         user_points = get_user_points(group_id, user_id)
+        if user_points <= 0:
+            await update.message.reply_text(f"You must have a positive point balance to buy rewards. Your current balance is {user_points} points.")
+            context.user_data.pop(REWARD_STATE, None)
+            return
         if user_points < reward['cost']:
             await update.message.reply_text(f"You do not have enough points for this reward. You have {user_points}, but it costs {reward['cost']}.")
             context.user_data.pop(REWARD_STATE, None)
@@ -2598,6 +2593,37 @@ async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @command_handler_wrapper(admin_only=True)
+async def snooze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /snooze [minutes] [count] - (Admin) Sets the dare snooze options for this group. """
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("This command can only be used in group chats.")
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text("Usage: /snooze <minutes> <count>\nExample: /snooze 60 2 (allows 2 snoozes of 60 minutes each)\nSet minutes or count to 0 to disable snoozing.")
+        return
+
+    try:
+        minutes = int(context.args[0])
+        count = int(context.args[1])
+        if minutes < 0 or count < 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("Please provide valid, non-negative numbers for minutes and count.")
+        return
+
+    group_id = str(update.effective_chat.id)
+    settings = load_snooze_settings()
+    settings[group_id] = {"duration": minutes, "limit": count}
+    save_snooze_settings(settings)
+
+    if minutes == 0 or count == 0:
+        await update.message.reply_text("Snoozing for dares has been disabled in this group.")
+    else:
+        await update.message.reply_text(f"Dare snooze settings updated: users can now snooze up to {count} time(s) for {minutes} minute(s) each.")
+
+
+@command_handler_wrapper(admin_only=True)
 async def stopdare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /stopdare - (Admin only) Manually stops the current Truth or Dare game in the group. """
     if update.effective_chat.type not in ['group', 'supergroup']:
@@ -2821,6 +2847,10 @@ async def point_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /point (user: see own points, admin: see own or another's points)
     """
+    if update.effective_chat.type == "private":
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats, as points are tracked per-group.")
+        return
+
     group_id = str(update.effective_chat.id)
     user = update.effective_user
     is_admin_user = False
@@ -2905,6 +2935,7 @@ COMMAND_MAP = {
     'chance': {'is_admin': False}, 'reward': {'is_admin': False}, 'cancel': {'is_admin': False},
     'addpoints': {'is_admin': True}, 'removepoints': {'is_admin': True},
     'point': {'is_admin': False}, 'top5': {'is_admin': True},
+    'snooze': {'is_admin': True},
     'title': {'is_admin': True}, 'removetitle': {'is_admin': True},
     'update': {'is_admin': True}, 'viewstakes': {'is_admin': True},
     'game': {'is_admin': False}, 'dareme': {'is_admin': False}, 'addtod': {'is_admin': False}, 'managetod': {'is_admin': True},
@@ -2965,8 +2996,8 @@ async def game_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 😈 <b>Truth or Dare</b>
 - Command: `/dareme`
-- Rules: Starts a solo game of Truth or Dare. You get 15 points for completing the task.
-- Contributing: Anyone can add new questions using the `/addtod` command!
+- Rules: Starts a solo game of Truth or Dare. You get 15, 30, or 50 points depending on the difficulty of the task. If snoozing is enabled in your group, you can also get more time to complete your dare.
+- Contributing: Anyone can add new questions and set their point value using the `/addtod` command!
 
 🎲 <b>Chance Game</b>
 - Command: `/chance`
@@ -3005,14 +3036,41 @@ async def addtod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("What would you like to add?", reply_markup=reply_markup)
 
 async def addtod_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the user's choice of adding a truth or a dare."""
+    """Handles the user's choice of adding a truth or a dare, then asks for point value."""
     query = update.callback_query
     await query.answer()
 
     choice_type = query.data.split(':')[1]
-    context.user_data[AWAITING_TOD_CONTENT] = {'type': choice_type}
+    context.user_data['addtod_type'] = choice_type # Store the type for the next step
 
-    await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add. You can send multiple in one message, just put each one on a new line.")
+    keyboard = [
+        [
+            InlineKeyboardButton("15 Points", callback_data='addtod:points:15'),
+            InlineKeyboardButton("30 Points", callback_data='addtod:points:30'),
+            InlineKeyboardButton("50 Points", callback_data='addtod:points:50'),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(f"How many points should this {choice_type} be worth?", reply_markup=reply_markup)
+
+
+async def addtod_points_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user's choice of point value for the new ToD item."""
+    query = update.callback_query
+    await query.answer()
+
+    points = int(query.data.split(':')[2])
+    choice_type = context.user_data.get('addtod_type')
+
+    if not choice_type:
+        await query.edit_message_text("Error: Could not determine type (Truth/Dare). Please start over with /addtod.")
+        context.user_data.clear()
+        return
+
+    # Set the state for the main conversation handler
+    context.user_data[AWAITING_TOD_CONTENT] = {'type': choice_type, 'points': points}
+
+    await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add (worth {points} points each). You can send multiple in one message, just put each one on a new line.")
 
 
 @command_handler_wrapper(admin_only=False)
@@ -3091,12 +3149,19 @@ async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(f"There are no {choice}s in the list for this group! Anyone can add some with /addtod.")
         return ConversationHandler.END
 
-    selected_item = random.choice(item_list)
+    selected_item_obj = random.choice(item_list)
+    # Handle both old (string) and new (dict) formats for backward compatibility
+    if isinstance(selected_item_obj, dict):
+        selected_text = selected_item_obj.get('text', 'An error occurred fetching the text.')
+        selected_points = selected_item_obj.get('points', 15)
+    else:
+        selected_text = str(selected_item_obj)
+        selected_points = 15 # Default points for old format
 
     tod_game_id = str(uuid.uuid4())
     context.user_data['tod_game_id'] = tod_game_id
 
-    text = f"{user.mention_html()}, your {choice} is:\n\n<b>{html.escape(selected_item)}</b>"
+    text = f"{user.mention_html()}, your {choice} is:\n\n<b>{html.escape(selected_text)}</b>"
 
     keyboard = [
         [
@@ -3113,7 +3178,9 @@ async def tod_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "user_id": user.id,
         "group_id": group_id,
         "type": choice,
-        "text": selected_item,
+        "text": selected_text,
+        "points": selected_points,
+        "snoozes_used": 0,
         "message_id": query.message.message_id,
         "chat_id": query.message.chat.id,
         "timestamp": time.time(),
@@ -3224,9 +3291,85 @@ async def tod_start_proof_handler(update: Update, context: ContextTypes.DEFAULT_
 
     new_text = f"{original_text}\n\n<b>Waiting for proof...</b>\n{proof_prompt}"
 
-    await query.edit_message_text(new_text, reply_markup=None, parse_mode='HTML')
+    # --- Snooze Button Logic ---
+    snooze_settings = load_snooze_settings().get(str(game['group_id']), {})
+    snooze_duration = snooze_settings.get("duration", 0)
+    snooze_limit = snooze_settings.get("limit", 0)
+    snoozes_used = game.get("snoozes_used", 0)
+
+    keyboard_buttons = []
+    if snooze_duration > 0 and snooze_limit > 0 and snoozes_used < snooze_limit:
+        keyboard_buttons.append(
+            InlineKeyboardButton(f"Snooze ({snooze_limit - snoozes_used} left)", callback_data=f'tod:snooze:{tod_game_id}')
+        )
+
+    reply_markup = InlineKeyboardMarkup([keyboard_buttons]) if keyboard_buttons else None
+    # --- End Snooze Button Logic ---
+
+    await query.edit_message_text(new_text, reply_markup=reply_markup, parse_mode='HTML')
     await query.answer("Please send your proof.")
     return TOD_PROOF
+
+
+async def tod_snooze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user snoozing a dare."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        _, _, tod_game_id = query.data.split(':')
+    except (ValueError, IndexError):
+        logger.error(f"Could not parse tod_snooze_handler callback data: {query.data}")
+        return
+
+    active_games = await load_active_tod_games()
+    game = active_games.get(tod_game_id)
+
+    if not game or query.from_user.id != game['user_id']:
+        await query.answer("This is not your dare to snooze!", show_alert=True)
+        return
+
+    group_id = str(game['group_id'])
+    snooze_settings = load_snooze_settings().get(group_id, {})
+    duration = snooze_settings.get("duration", 0)
+    limit = snooze_settings.get("limit", 0)
+    snoozes_used = game.get("snoozes_used", 0)
+
+    if duration <= 0 or limit <= 0 or snoozes_used >= limit:
+        await query.answer("You cannot snooze this dare anymore.", show_alert=True)
+        return
+
+    # Increment snoozes used
+    game['snoozes_used'] = snoozes_used + 1
+    snoozes_left = limit - game['snoozes_used']
+
+    # Move from active to snoozed
+    snoozed_dares = load_snoozed_dares()
+    # Use the original tod_game_id as the key for snoozed dares to prevent duplicates
+    snoozed_dares[tod_game_id] = {
+        'user_id': game['user_id'],
+        'group_id': group_id,
+        'original_message_id': game['message_id'],
+        'original_chat_id': game['chat_id'],
+        'dare_text': game['text'],
+        'dare_points': game.get('points', 15),
+        'snoozes_used': game['snoozes_used'],
+        'snooze_limit': limit,
+        'remind_at': time.time() + (duration * 60)
+    }
+    save_snoozed_dares(snoozed_dares)
+
+    # Remove from active games to free up the queue
+    del active_games[tod_game_id]
+    await save_active_tod_games(active_games)
+
+    await query.edit_message_text(
+        f"{query.message.text}\n\n"
+        f"<i><b>Dare snoozed for {duration} minutes.</b> You will be reminded then. "
+        f"You have {snoozes_left} snooze(s) remaining. Forfeiting later will cost 5 points.</i>",
+        parse_mode='HTML',
+        reply_markup=None
+    )
 
 
 async def _create_tod_management_message(group_id: str, list_type: str, page: int = 0):
@@ -3253,11 +3396,21 @@ async def _create_tod_management_message(group_id: str, list_type: str, page: in
     total_pages = -(-len(items) // ITEMS_PER_PAGE)
     text = f"<b>Managing {list_type.capitalize()}</b> (Page {page + 1} of {total_pages}):\n\n"
     keyboard = []
-    for i, item_text in enumerate(paginated_items):
+    for i, item_obj in enumerate(paginated_items):
         actual_index = start_index + i
-        button_text = (item_text[:20] + '...') if len(item_text) > 20 else item_text
+        # Handle both old (string) and new (dict) formats during transition
+        if isinstance(item_obj, dict):
+            item_text = item_obj.get('text', '')
+            item_points = item_obj.get('points', 15)
+            button_text = (item_text[:20] + '...') if len(item_text) > 20 else item_text
+            display_text = f"❌ ({item_points} pts) {button_text}"
+        else: # Fallback for old format, just in case
+            item_text = str(item_obj)
+            button_text = (item_text[:20] + '...') if len(item_text) > 20 else item_text
+            display_text = f"❌ {button_text}"
+
         keyboard.append([
-            InlineKeyboardButton(f"❌ {button_text}", callback_data=f'managetod:remove:{list_type}:{actual_index}:{page}')
+            InlineKeyboardButton(display_text, callback_data=f'managetod:remove:{list_type}:{actual_index}:{page}')
         ])
 
     nav_buttons = []
@@ -3386,9 +3539,16 @@ async def manage_tod_remove_handler(update: Update, context: ContextTypes.DEFAUL
     items = tod_data.get(group_id, {}).get(list_type, [])
 
     if index_to_remove < len(items):
-        removed_item = items.pop(index_to_remove)
+        removed_item_obj = items.pop(index_to_remove)
         await save_tod_data(tod_data)
-        await query.answer(f"Removed: {removed_item[:30]}...")
+
+        # Handle both old (string) and new (dict) formats
+        if isinstance(removed_item_obj, dict):
+            removed_text = removed_item_obj.get('text', 'N/A')
+        else:
+            removed_text = str(removed_item_obj)
+
+        await query.answer(f"Removed: {removed_text[:30]}...")
     else:
         await query.answer("Item not found. It might have been already removed.", show_alert=True)
         return
@@ -3439,12 +3599,13 @@ async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFA
         is_valid_proof = True
 
     if is_valid_proof:
-        await add_user_points(int(chat_id), user.id, 15, context)
+        points_to_award = game_details.get('points', 15) # Default to 15 if not found for old dares
+        await add_user_points(int(chat_id), user.id, points_to_award, context)
 
         display_name = get_display_name(user.id, user.full_name, int(chat_id))
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"🎉 {display_name} has completed their {game_details['type']} and earned 15 points! 🎉",
+            text=f"🎉 {display_name} has completed their {game_details['type']} and earned {points_to_award} points! 🎉",
             parse_mode='HTML'
         )
 
@@ -3626,8 +3787,8 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 <b>Game Commands</b>
 - /newgame (reply to user): Challenge someone to a game of Dice, Connect Four, Battleship, or Tic-Tac-Toe.
 - /chance: Play a daily game of chance for points or other outcomes.
-- /dareme: Starts a solo game of Truth or Dare.
-- /addtod: Contribute new questions to the Truth or Dare list.
+- /dareme: Starts a solo game of Truth or Dare, with a chance to snooze if you need more time.
+- /addtod: Contribute new questions (worth 15, 30, or 50 points) to the Truth or Dare list.
         """
     elif topic == 'help_points':
         text = """
@@ -3652,6 +3813,7 @@ async def help_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 - /loser &lt;user_id&gt;: Declare a user as the loser of the current game.
 - /stopgame: Manually stops the current 2-player game in the group.
 - /stopdare: Manually stops the current Truth or Dare game in the group.
+- /snooze &lt;minutes&gt; &lt;count&gt;: Configure the dare snooze options for the group.
 - /cleangames: Cleans up old, completed game data.
 - /top5: See the top 5 users with the most points.
 - /addpoints &lt;user_id&gt; &lt;amount&gt;: Add points to a user.
@@ -3876,6 +4038,15 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
         group_id = game['group_id']
 
         user_points = get_user_points(group_id, user_id)
+
+        if user_points <= 0:
+            await send_and_track_message(
+                context,
+                update.effective_chat.id,
+                game_id,
+                f"You must have a positive point balance to stake points. Your current balance is {user_points} points."
+            )
+            return STAKE_SUBMISSION_POINTS
 
         if points <= 0:
             await send_and_track_message(
@@ -4467,12 +4638,137 @@ def add_command(app: Application, command: str, handler):
     app.add_handler(MessageHandler(filters.Regex(bang_regex), message_handler_wrapper))
 
 
+async def tod_forfeit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user forfeiting a snoozed dare."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        _, _, tod_game_id = query.data.split(':')
+    except (ValueError, IndexError):
+        logger.error(f"Could not parse tod_forfeit_handler callback data: {query.data}")
+        return
+
+    active_games = await load_active_tod_games()
+    game = active_games.get(tod_game_id)
+
+    if not game or query.from_user.id != game['user_id']:
+        await query.answer("This is not your dare to forfeit!", show_alert=True)
+        return
+
+    user_id = game['user_id']
+    group_id = game['group_id']
+
+    # Penalize user
+    await add_user_points(int(group_id), user_id, -5, context)
+
+    # Clean up game
+    del active_games[tod_game_id]
+    await save_active_tod_games(active_games)
+
+    user_member = await context.bot.get_chat_member(group_id, user_id)
+    display_name = get_display_name(user_id, user_member.user.full_name, int(group_id))
+
+    await query.edit_message_text(
+        f"{display_name} has forfeited the dare and lost 5 points.",
+        parse_mode='HTML',
+        reply_markup=None
+    )
+
+    # Also edit the original message if we have the info
+    if 'original_message_id' in game and 'original_chat_id' in game:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=game['original_chat_id'],
+                message_id=game['original_message_id'],
+                text=f"The user forfeited this dare after snoozing:\n\n<i>{html.escape(game['text'])}</i>",
+                parse_mode='HTML',
+                reply_markup=None
+            )
+        except Exception as e:
+            logger.error(f"Could not edit original snoozed ToD message after forfeit: {e}")
+
+
+async def check_snoozed_dares(context: ContextTypes.DEFAULT_TYPE):
+    """Periodically checks for and reminds users of snoozed dares."""
+    now = time.time()
+    snoozed_dares = load_snoozed_dares()
+    active_games = await load_active_tod_games()
+
+    dares_to_remove = []
+
+    for tod_game_id, dare in list(snoozed_dares.items()):
+        if now >= dare['remind_at']:
+            dares_to_remove.append(tod_game_id)
+            group_id = dare['group_id']
+
+            # Re-activate the game
+            active_games[tod_game_id] = {
+                "user_id": dare['user_id'],
+                "group_id": group_id,
+                "type": "dare", # We assume it's a dare if it was snoozed
+                "text": dare['dare_text'],
+                "points": dare['dare_points'],
+                "snoozes_used": dare['snoozes_used'],
+                "original_message_id": dare['original_message_id'],
+                "original_chat_id": dare['original_chat_id'],
+                "message_id": None, # This will be the new reminder message
+                "chat_id": group_id,
+                "timestamp": time.time(),
+                "status": "awaiting_proof"
+            }
+
+            try:
+                user_member = await context.bot.get_chat_member(group_id, dare['user_id'])
+                display_name = get_display_name(dare['user_id'], user_member.user.full_name, int(group_id))
+
+                reminder_text = (
+                    f"⏰ **Dare Reminder!** ⏰\n\n"
+                    f"{display_name}, your snooze is over! Your task is:\n\n"
+                    f"<i>{html.escape(dare['dare_text'])}</i>\n\n"
+                    f"Please provide proof, snooze again, or forfeit."
+                )
+
+                keyboard = []
+                snoozes_left = dare.get('snooze_limit', 0) - dare.get('snoozes_used', 0)
+                if snoozes_left > 0:
+                    keyboard.append(InlineKeyboardButton(f"Snooze Again ({snoozes_left} left)", callback_data=f'tod:snooze:{tod_game_id}'))
+
+                keyboard.append(InlineKeyboardButton("Forfeit (-5 points)", callback_data=f'tod:forfeit:{tod_game_id}'))
+                reply_markup = InlineKeyboardMarkup([keyboard])
+
+                reminder_message = await send_message_and_track(
+                    context,
+                    chat_id=int(group_id),
+                    text=reminder_text,
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+                # Update the message_id in the active game to point to the new reminder message
+                active_games[tod_game_id]['message_id'] = reminder_message.message_id
+            except Exception as e:
+                logger.error(f"Failed to process snooze reminder for game {tod_game_id}: {e}")
+                # If we fail to send the message, don't reactivate the game
+                dares_to_remove.pop() # remove the last added item
+                if tod_game_id in active_games:
+                    del active_games[tod_game_id]
+
+
+    if dares_to_remove:
+        for tod_game_id in dares_to_remove:
+            if tod_game_id in snoozed_dares:
+                del snoozed_dares[tod_game_id]
+        save_snoozed_dares(snoozed_dares)
+        await save_active_tod_games(active_games)
+
+
 async def post_init(application: Application) -> None:
     """Post initialization function for the application."""
     context = CallbackContext(application=application)
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_game_inactivity, 'interval', minutes=1, args=[context])
     scheduler.add_job(delete_expired_messages, 'interval', minutes=1, args=[context])
+    scheduler.add_job(check_snoozed_dares, 'interval', minutes=1, args=[context])
     scheduler.start()
 
 
@@ -4499,6 +4795,7 @@ if __name__ == '__main__':
     add_command(app, 'loser', loser_command)
     add_command(app, 'stopgame', stopgame_command)
     add_command(app, 'stopdare', stopdare_command)
+    add_command(app, 'snooze', snooze_command)
     add_command(app, 'cleangames', cleangames_command)
     add_command(app, 'chance', chance_command)
     add_command(app, 'reward', reward_command)
@@ -4589,6 +4886,7 @@ if __name__ == '__main__':
     app.add_handler(opponent_game_setup_handler)
     app.add_handler(CallbackQueryHandler(challenge_response_handler, pattern=r'^challenge:(accept|refuse):.*'))
     app.add_handler(CallbackQueryHandler(addtod_type_handler, pattern=r'^addtod:(truth|dare)$'))
+    app.add_handler(CallbackQueryHandler(addtod_points_handler, pattern=r'^addtod:points:.*'))
     app.add_handler(CallbackQueryHandler(connect_four_move_handler, pattern=r'^c4:move:.*'))
     app.add_handler(CallbackQueryHandler(tictactoe_move_handler, pattern=r'^ttt:move:.*'))
     app.add_handler(CallbackQueryHandler(bs_select_col_handler, pattern=r'^bs:col:.*'))
@@ -4597,6 +4895,8 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(tod_choice_handler, pattern=r'^tod:choice:.*'))
     app.add_handler(CallbackQueryHandler(tod_refuse_handler, pattern=r'^tod:refuse:.*'))
     app.add_handler(CallbackQueryHandler(tod_start_proof_handler, pattern=r'^tod:start_proof:.*'))
+    app.add_handler(CallbackQueryHandler(tod_snooze_handler, pattern=r'^tod:snooze:.*'))
+    app.add_handler(CallbackQueryHandler(tod_forfeit_handler, pattern=r'^tod:forfeit:.*'))
     app.add_handler(CallbackQueryHandler(manage_tod_view_handler, pattern=r'^managetod:view:.*'))
     app.add_handler(CallbackQueryHandler(manage_tod_remove_handler, pattern=r'^managetod:remove:.*'))
     app.add_handler(CallbackQueryHandler(manage_tod_done_handler, pattern=r'^managetod:done'))
