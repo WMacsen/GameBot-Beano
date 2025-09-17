@@ -393,11 +393,11 @@ def is_admin(user_id):
 
     return False
 
-@command_handler_wrapper(admin_only=True)
+@command_handler_wrapper(admin_only=False)
 async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /update - (Owner only) Syncs the admin list for the current group. """
-    if not is_owner(update.effective_user.id):
-        await update.message.reply_text("This command is for the bot owner only.")
+    """ /update - (Admin only) Syncs the admin list for the current group. """
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("This command is for bot admins only.")
         return
 
     if update.effective_chat.type not in ['group', 'supergroup']:
