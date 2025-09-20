@@ -3372,7 +3372,7 @@ async def tod_snooze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
-async def _create_tod_management_message(group_id: str, list_type: str, page: int = 0):
+async def _create_tod_management_message(group_id: str, list_type: str, admin_id: int, page: int = 0):
     """Helper function to generate the text and markup for the ToD management interface."""
     tod_data = await load_tod_data()
     items = tod_data.get(group_id, {}).get(list_type, [])
@@ -3410,19 +3410,19 @@ async def _create_tod_management_message(group_id: str, list_type: str, page: in
             display_text = f"❌ {button_text}"
 
         keyboard.append([
-            InlineKeyboardButton(display_text, callback_data=f'managetod:remove:{list_type}:{actual_index}:{page}')
+            InlineKeyboardButton(display_text, callback_data=f'managetod:remove:{list_type}:{actual_index}:{page}:{admin_id}')
         ])
 
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f'managetod:view:{list_type}:{page - 1}'))
+        nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f'managetod:view:{list_type}:{page - 1}:{admin_id}'))
     if end_index < len(items):
-        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f'managetod:view:{list_type}:{page + 1}'))
+        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f'managetod:view:{list_type}:{page + 1}:{admin_id}'))
 
     if nav_buttons:
         keyboard.append(nav_buttons)
 
-    keyboard.append([InlineKeyboardButton("Done", callback_data='managetod:done')])
+    keyboard.append([InlineKeyboardButton("Done", callback_data=f'managetod:done:{admin_id}')])
 
     return text, InlineKeyboardMarkup(keyboard)
 
@@ -3498,10 +3498,11 @@ async def managetod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("This command can only be used in group chats.")
         return
 
+    admin_id = update.effective_user.id
     keyboard = [
         [
-            InlineKeyboardButton("Manage Truths", callback_data='managetod:view:truths:0'),
-            InlineKeyboardButton("Manage Dares", callback_data='managetod:view:dares:0')
+            InlineKeyboardButton("Manage Truths", callback_data=f'managetod:view:truths:0:{admin_id}'),
+            InlineKeyboardButton("Manage Dares", callback_data=f'managetod:view:dares:0:{admin_id}')
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -3510,15 +3511,20 @@ async def managetod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def manage_tod_view_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """(Admin) Displays a paginated list of truths or dares with remove buttons."""
     query = update.callback_query
-    await query.answer()
 
     parts = query.data.split(':')
-    list_type = parts[2]
-    page = int(parts[3]) if len(parts) > 3 else 0
+    admin_id = int(parts[-1])
 
+    if query.from_user.id != admin_id:
+        await query.answer("This menu is not for you.", show_alert=True)
+        return
+
+    await query.answer()
+    list_type = parts[2]
+    page = int(parts[3]) if len(parts) > 4 else 0
     group_id = str(query.message.chat.id)
 
-    text, reply_markup = await _create_tod_management_message(group_id, list_type, page)
+    text, reply_markup = await _create_tod_management_message(group_id, list_type, admin_id, page)
 
     if not reply_markup:
         await query.edit_message_text(text)
@@ -3529,10 +3535,15 @@ async def manage_tod_remove_handler(update: Update, context: ContextTypes.DEFAUL
     """(Admin) Removes a single truth or dare and refreshes the view."""
     query = update.callback_query
 
-    _, _, list_type, index_str, page_str = query.data.split(':')
+    _, _, list_type, index_str, page_str, admin_id_str = query.data.split(':')
+    admin_id = int(admin_id_str)
+
+    if query.from_user.id != admin_id:
+        await query.answer("This menu is not for you.", show_alert=True)
+        return
+
     index_to_remove = int(index_str)
     page = int(page_str)
-
     group_id = str(query.message.chat.id)
     tod_data = await load_tod_data()
 
@@ -3542,7 +3553,6 @@ async def manage_tod_remove_handler(update: Update, context: ContextTypes.DEFAUL
         removed_item_obj = items.pop(index_to_remove)
         await save_tod_data(tod_data)
 
-        # Handle both old (string) and new (dict) formats
         if isinstance(removed_item_obj, dict):
             removed_text = removed_item_obj.get('text', 'N/A')
         else:
@@ -3553,7 +3563,7 @@ async def manage_tod_remove_handler(update: Update, context: ContextTypes.DEFAUL
         await query.answer("Item not found. It might have been already removed.", show_alert=True)
         return
 
-    text, reply_markup = await _create_tod_management_message(group_id, list_type, page)
+    text, reply_markup = await _create_tod_management_message(group_id, list_type, admin_id, page)
 
     if not reply_markup:
         await query.edit_message_text(text)
@@ -3563,6 +3573,14 @@ async def manage_tod_remove_handler(update: Update, context: ContextTypes.DEFAUL
 async def manage_tod_done_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """(Admin) Cleans up the management message."""
     query = update.callback_query
+
+    _, _, admin_id_str = query.data.split(':')
+    admin_id = int(admin_id_str)
+
+    if query.from_user.id != admin_id:
+        await query.answer("This menu is not for you.", show_alert=True)
+        return
+
     await query.answer()
     await query.edit_message_text("Management session finished.")
 
