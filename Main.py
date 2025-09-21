@@ -393,11 +393,11 @@ def is_admin(user_id):
 
     return False
 
-@command_handler_wrapper(admin_only=True)
+@command_handler_wrapper(admin_only=False)
 async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /update - (Owner only) Syncs the admin list for the current group. """
-    if not is_owner(update.effective_user.id):
-        await update.message.reply_text("This command is for the bot owner only.")
+    """ /update - (Admin only) Syncs the admin list for the current group. """
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("This command is for bot admins only.")
         return
 
     if update.effective_chat.type not in ['group', 'supergroup']:
@@ -2685,7 +2685,7 @@ async def chance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = cooldowns.get(user_id, {"count": 0, "date": ""})
 
     if user_data["date"] == today and user_data["count"] >= 3:
-        await update.message.reply_text("You have already played 3 times today. Please wait until tomorrow.")
+        await send_message_and_track(context, update.effective_chat.id, "You have already played 3 times today. Please wait until tomorrow.")
         return
 
     # If it's a new day, reset the counter
@@ -2699,31 +2699,31 @@ async def chance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_cooldowns(cooldowns)
 
     plays_left = 3 - user_data['count']
-    await update.message.reply_text(f"You spin the wheel of fortune... (You have {plays_left} {'play' if plays_left == 1 else 'plays'} left today)")
+    await send_message_and_track(context, update.effective_chat.id, f"You spin the wheel of fortune... (You have {plays_left} {'play' if plays_left == 1 else 'plays'} left today)")
 
     outcome = get_chance_outcome()
     group_id = str(update.effective_chat.id)
 
     if outcome == "plus_50":
         await add_user_points(group_id, user_id, 50, context)
-        await update.message.reply_text("Congratulations! You won 50 points!")
+        await send_message_and_track(context, update.effective_chat.id, "Congratulations! You won 50 points!")
     elif outcome == "minus_100":
         await add_user_points(group_id, user_id, -100, context)
-        await update.message.reply_text("Ouch! You lost 100 points.")
+        await send_message_and_track(context, update.effective_chat.id, "Ouch! You lost 100 points.")
     elif outcome == "chastity_2_days":
-        await update.message.reply_text("Your fate is 2 days of chastity!")
+        await send_message_and_track(context, update.effective_chat.id, "Your fate is 2 days of chastity!")
     elif outcome == "chastity_7_days":
-        await update.message.reply_text("Your fate is 7 days of chastity! Good luck.")
+        await send_message_and_track(context, update.effective_chat.id, "Your fate is 7 days of chastity! Good luck.")
     elif outcome == "nothing":
-        await update.message.reply_text("Nothing happened. Better luck next time!")
+        await send_message_and_track(context, update.effective_chat.id, "Nothing happened. Better luck next time!")
     elif outcome == "lose_all_points":
         points = get_user_points(group_id, user_id)
         await add_user_points(group_id, user_id, -points, context)
-        await update.message.reply_text("Catastrophic failure! You lost all your points.")
+        await send_message_and_track(context, update.effective_chat.id, "Catastrophic failure! You lost all your points.")
     elif outcome == "double_points":
         points = get_user_points(group_id, user_id)
         await add_user_points(group_id, user_id, points, context)
-        await update.message.reply_text("Jackpot! Your points have been doubled!")
+        await send_message_and_track(context, update.effective_chat.id, "Jackpot! Your points have been doubled!")
     elif outcome == "free_reward":
         rewards = get_rewards_list(group_id)
         msg = "<b>You won a free reward!</b>\nChoose one of the following:\n"
@@ -2731,9 +2731,9 @@ async def chance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"• <b>{r['name']}</b>\n"
         msg += "\nReply with the name of the reward you want."
         context.user_data[FREE_REWARD_SELECTION] = {'group_id': group_id}
-        await update.message.reply_text(msg, parse_mode='HTML')
+        await send_message_and_track(context, update.effective_chat.id, msg, parse_mode='HTML')
     elif outcome == "ask_task":
-        await update.message.reply_text("You have won the right to ask a simple task from any of the other boys. Who would you like to ask? (Please provide their @username)")
+        await send_message_and_track(context, update.effective_chat.id, "You have won the right to ask a simple task from any of the other boys. Who would you like to ask? (Please provide their @username)")
         context.user_data[ASK_TASK_TARGET] = {'group_id': group_id}
 
 @command_handler_wrapper(admin_only=True)
