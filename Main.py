@@ -546,23 +546,6 @@ async def send_message_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: in
     await _track_sent_message(message)
     return message
 
-async def send_photo_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, photo: str, **kwargs):
-    """Sends a photo and tracks it."""
-    message = await context.bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
-    await _track_sent_message(message)
-    return message
-
-async def send_video_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, video: str, **kwargs):
-    """Sends a video and tracks it."""
-    message = await context.bot.send_video(chat_id=chat_id, video=video, **kwargs)
-    await _track_sent_message(message)
-    return message
-
-async def send_voice_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, voice: str, **kwargs):
-    """Sends a voice message and tracks it."""
-    message = await context.bot.send_voice(chat_id=chat_id, voice=voice, **kwargs)
-    await _track_sent_message(message)
-    return message
 
 
 # =============================
@@ -930,6 +913,18 @@ def check_connect_four_draw(board: list) -> bool:
     return all(cell != 0 for cell in board[0])
 
 
+async def track_message_for_game_deletion(game_id: str, message: telegram.Message):
+    """Adds a message to a game's deletion list."""
+    if not game_id or not message:
+        return
+    games_data = await load_games_data_async()
+    if game_id in games_data:
+        games_data[game_id].setdefault('messages_to_delete', []).append({
+            'chat_id': message.chat.id,
+            'message_id': message.message_id
+        })
+        await save_games_data_async(games_data)
+
 async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Deletes all tracked messages for a game and clears the list."""
     games_data = await load_games_data_async()
@@ -957,11 +952,7 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
 async def send_and_track_message(context, chat_id, game_id, text, **kwargs):
     """Sends a message and tracks it for later deletion."""
     sent_message = await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
-    games_data = await load_games_data_async()
-    if game_id in games_data:
-        logger.debug(f"Tracking message {sent_message.message_id} in chat {chat_id} for game {game_id}")
-        games_data[game_id].setdefault('messages_to_delete', []).append({'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id})
-        await save_games_data_async(games_data)
+    await track_message_for_game_deletion(game_id, sent_message)
     return sent_message
 
 async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, winner_id: int, loser_id: int):
@@ -988,20 +979,25 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
         await add_user_points(game['group_id'], winner_id, points_val, context)
         await add_user_points(game['group_id'], loser_id, -points_val, context)
         message = f"{winner_name} has won the game! {loser_name} lost {points_val} points."
-        await send_message_and_track(
+        await send_and_track_message(
             context,
             game['group_id'],
+            game_id,
             message,
             parse_mode='HTML'
         )
     else:  # media
         caption = f"{winner_name} won the game! This is the loser's stake from {loser_name}."
+        sent_message = None
         if loser_stake['type'] == 'photo':
-            await send_photo_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'video':
-            await send_video_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            sent_message = await context.bot.send_video(chat_id=game['group_id'], video=loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'voice':
-            await send_voice_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=loser_stake['value'], caption=caption, parse_mode='HTML')
+
+        if sent_message:
+            await track_message_for_game_deletion(game_id, sent_message)
 
     # Private messages to players (Battleship only)
     if game.get('game_type') == 'battleship':
@@ -1162,18 +1158,22 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
             if challenger_stake['type'] == 'points':
                 points_val = challenger_stake['value']
                 await add_user_points(game['group_id'], challenger_id, -points_val, context)
-                await send_message_and_track(context, game['group_id'], f"{challenger_name} lost {points_val} points in the draw.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{challenger_name} lost {points_val} points in the draw.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {challenger_name}'s stake from the drawn game."
+                sent_message = None
                 if challenger_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=challenger_stake['value'], caption=caption, parse_mode='HTML')
+
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process challenger's stake in draw for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {challenger_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {challenger_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     # Handle opponent's stake
     try:
@@ -1181,18 +1181,22 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
             if opponent_stake['type'] == 'points':
                 points_val = opponent_stake['value']
                 await add_user_points(game['group_id'], opponent_id, -points_val, context)
-                await send_message_and_track(context, game['group_id'], f"{opponent_name} lost {points_val} points in the draw.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{opponent_name} lost {points_val} points in the draw.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {opponent_name}'s stake from the drawn game."
+                sent_message = None
                 if opponent_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=opponent_stake['value'], caption=caption, parse_mode='HTML')
+
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process opponent's stake in draw for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {opponent_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {opponent_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -1377,18 +1381,21 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
         if challenger_stake:
             if challenger_stake['type'] == 'points':
                 await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
-                await send_message_and_track(context, game['group_id'], f"{challenger_name} lost their stake in the cancelled game.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{challenger_name} lost their stake in the cancelled game.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {challenger_name}'s stake from the cancelled game."
+                sent_message = None
                 if challenger_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=challenger_stake['value'], caption=caption, parse_mode='HTML')
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process challenger's stake in cancellation for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {challenger_name}'s stake due to an error.", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {challenger_name}'s stake due to an error.", parse_mode='HTML')
 
 
     # Handle opponent's stake
@@ -1396,18 +1403,21 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
         if opponent_stake:
             if opponent_stake['type'] == 'points':
                 await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
-                await send_message_and_track(context, game['group_id'], f"{opponent_name} lost their stake in the cancelled game.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{opponent_name} lost their stake in the cancelled game.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {opponent_name}'s stake from the cancelled game."
+                sent_message = None
                 if opponent_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=opponent_stake['value'], caption=caption, parse_mode='HTML')
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process opponent's stake in cancellation for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {opponent_name}'s stake due to an error.", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {opponent_name}'s stake due to an error.", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -4400,11 +4410,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update_game_activity(active_game_id)
 
-    # Track the user's dice message for deletion
-    active_game.setdefault('messages_to_delete', []).append({
-        'chat_id': update.effective_chat.id,
-        'message_id': update.message.message_id
-    })
+    await track_message_for_game_deletion(active_game_id, update.message)
 
     last_roll = active_game.get('last_roll')
 
