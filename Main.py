@@ -11,7 +11,7 @@ from typing import Final
 import uuid
 import telegram
 from telegram import Update, User, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext, CallbackQueryHandler, ConversationHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext, CallbackQueryHandler, ConversationHandler, ApplicationHandlerStop
 from telegram.constants import ChatMemberStatus
 from functools import wraps
 import time
@@ -45,7 +45,7 @@ logger.debug(f"Environment variables: {os.environ}")
 load_dotenv()
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 # IMPORTANT: UPDATE THESE VALUES FOR YOUR BOT
-BOT_USERNAME: Final = '@YourBotUsername'  # <--- CHANGE THIS to your bot's username
+BOT_USERNAME: Final = '@BeanoGameBot'  # Updated from logs
 OWNER_ID = 123456789  # <--- CHANGE THIS to your own Telegram User ID
 # END IMPORTANT
 
@@ -122,6 +122,9 @@ def command_handler_wrapper(admin_only=False):
 
                 # Execute the actual command function and store its result
                 result = await func(update, context, *args, **kwargs)
+
+                # If we got here, the command was handled. Stop propagation to other groups.
+                raise ApplicationHandlerStop
 
             finally:
                 # Delete the command message
@@ -2128,11 +2131,20 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     current_chat_id = str(update.effective_chat.id)
+    logger.debug(f"conversation_handler called in chat {current_chat_id} with text: {update.message.text}")
 
     def is_state_for_current_chat(key):
         """Helper to check if a manual state belongs to the current chat."""
         state = context.user_data.get(key)
-        return isinstance(state, dict) and str(state.get('group_id')) == current_chat_id
+        # Handle cases where state might be a simple value or missing
+        if not isinstance(state, dict):
+            return False
+
+        state_group_id = str(state.get('group_id'))
+        res = state_group_id == current_chat_id
+
+        logger.debug(f"Checking state for key {key}: group_id in state={state_group_id}, current_chat_id={current_chat_id}, match={res}")
+        return res
 
     # === Add ToD Content Flow ===
     if AWAITING_TOD_CONTENT in context.user_data and is_state_for_current_chat(AWAITING_TOD_CONTENT):
@@ -2167,7 +2179,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(f"Successfully added {len(new_items_obj)} new {add_type}(s), each worth {points} points!")
         context.user_data.pop(AWAITING_TOD_CONTENT, None) # Clear the state
         context.user_data.pop('addtod_type', None) # Clean up intermediate state
-        return
+        raise ApplicationHandlerStop
 
     # === Add Reward Flow: Step 2 (Cost) ===
     if ADDREWARD_COST_STATE in context.user_data and is_state_for_current_chat(ADDREWARD_COST_STATE):
@@ -2186,7 +2198,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             await update.message.reply_text(f"Could not add reward '{name}'. It may already exist or is not allowed.")
         context.user_data.pop(ADDREWARD_COST_STATE, None)
-        return
+        raise ApplicationHandlerStop
 
     # === Add Reward Flow: Step 1 (Name) ===
     if ADDREWARD_STATE in context.user_data and is_state_for_current_chat(ADDREWARD_STATE):
@@ -2200,7 +2212,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data[ADDREWARD_COST_STATE] = state
         context.user_data.pop(ADDREWARD_STATE, None)
         await update.message.reply_text(f"What is the cost (in points) for the reward '{name}'?")
-        return
+        raise ApplicationHandlerStop
 
     # === Remove Reward Flow ===
     if REMOVEREWARD_STATE in context.user_data and is_state_for_current_chat(REMOVEREWARD_STATE):
@@ -2216,7 +2228,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             await update.message.reply_text(f"Could not remove reward '{name}'. It may not exist or is not allowed.")
         context.user_data.pop(REMOVEREWARD_STATE, None)
-        return
+        raise ApplicationHandlerStop
 
     # === User Reward Choice Flow ===
     if REWARD_STATE in context.user_data and is_state_for_current_chat(REWARD_STATE):
@@ -2250,16 +2262,16 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 except Exception:
                     pass
             context.user_data.pop(REWARD_STATE, None)
-            return
+            raise ApplicationHandlerStop
         user_points = get_user_points(group_id, user_id)
         if user_points <= 0:
             await send_message_and_track(context, update.effective_chat.id, f"You must have a positive point balance to buy rewards. Your current balance is {user_points} points.")
             context.user_data.pop(REWARD_STATE, None)
-            return
+            raise ApplicationHandlerStop
         if user_points < reward['cost']:
             await send_message_and_track(context, update.effective_chat.id, f"You do not have enough points for this reward. You have {user_points}, but it costs {reward['cost']}.")
             context.user_data.pop(REWARD_STATE, None)
-            return
+            raise ApplicationHandlerStop
         await add_user_points(group_id, user_id, -reward['cost'], context)
 
         # Public announcement
@@ -2285,7 +2297,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 logger.warning(f"Failed to notify admin {admin.user.id} about reward purchase.")
 
         context.user_data.pop(REWARD_STATE, None)
-        return
+        raise ApplicationHandlerStop
 
     # === Add/Remove Points Flow ===
     if ADDPOINTS_STATE in context.user_data and is_state_for_current_chat(ADDPOINTS_STATE):
@@ -2298,7 +2310,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await add_user_points(state['group_id'], state['target_id'], value, context)
         await send_message_and_track(context, update.effective_chat.id, f"Added {value} points.")
         context.user_data.pop(ADDPOINTS_STATE, None)
-        return
+        raise ApplicationHandlerStop
 
     if REMOVEPOINTS_STATE in context.user_data and is_state_for_current_chat(REMOVEPOINTS_STATE):
         state = context.user_data[REMOVEPOINTS_STATE]
@@ -2310,7 +2322,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await add_user_points(state['group_id'], state['target_id'], -value, context)
         await send_message_and_track(context, update.effective_chat.id, f"Removed {value} points.")
         context.user_data.pop(REMOVEPOINTS_STATE, None)
-        return
+        raise ApplicationHandlerStop
 
     # === Free Reward Flow ===
     if FREE_REWARD_SELECTION in context.user_data and is_state_for_current_chat(FREE_REWARD_SELECTION):
@@ -2324,7 +2336,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if not reward:
             await send_message_and_track(context, update.effective_chat.id, "That reward does not exist. The reward selection process has been cancelled. Please try the /chance command again later.")
             context.user_data.pop(FREE_REWARD_SELECTION, None)
-            return
+            raise ApplicationHandlerStop
 
         display_name = get_display_name(user_id, update.effective_user.full_name, group_id)
         await send_message_and_track(context, update.effective_chat.id, f"Congratulations! You have claimed your free reward: <b>{reward['name']}</b>!", parse_mode='HTML')
@@ -2342,7 +2354,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 logger.warning(f"Failed to notify admin {admin.user.id} about free reward.")
 
         context.user_data.pop(FREE_REWARD_SELECTION, None)
-        return
+        raise ApplicationHandlerStop
 
     # === Ask Task Flow ===
     if ASK_TASK_TARGET in context.user_data and is_state_for_current_chat(ASK_TASK_TARGET):
@@ -2356,7 +2368,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data[ASK_TASK_DESCRIPTION] = state
         context.user_data.pop(ASK_TASK_TARGET, None)
         await send_message_and_track(context, update.effective_chat.id, "What is the simple task you want to ask of them?")
-        return
+        raise ApplicationHandlerStop
 
     if ASK_TASK_DESCRIPTION in context.user_data and is_state_for_current_chat(ASK_TASK_DESCRIPTION):
         state = context.user_data[ASK_TASK_DESCRIPTION]
@@ -2377,7 +2389,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
         await send_message_and_track(context, update.effective_chat.id, "Your task has been assigned.")
         context.user_data.pop(ASK_TASK_DESCRIPTION, None)
-        return
+        raise ApplicationHandlerStop
 
 @command_handler_wrapper(admin_only=False)
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
