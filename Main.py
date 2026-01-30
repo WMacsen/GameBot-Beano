@@ -111,7 +111,9 @@ def command_handler_wrapper(admin_only=False):
                 if admin_only and chat.type in ['group', 'supergroup']:
                     member = await context.bot.get_chat_member(chat.id, user.id)
                     if member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                        await update.message.reply_text(
+                        await send_message_and_track(
+                            context,
+                            update.effective_chat.id,
                             f"Warning: {user.mention_html()}, you are not authorized to use this command.",
                             parse_mode='HTML'
                         )
@@ -158,14 +160,14 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.reply_to_message:
         target_user = update.message.reply_to_message.from_user
         if not context.args:
-            await update.message.reply_text("Usage (as reply): /title <the title>")
+            await send_message_and_track(context, update.effective_chat.id, "Usage (as reply): /title <the title>")
             return
         title = " ".join(context.args)
 
     # Case 2: Command is not a reply, used with arguments
     else:
         if len(context.args) < 2:
-            await update.message.reply_text("Usage: /title <@username or user_id> <title>\nOr, reply to a user's message with: /title <the title>")
+            await send_message_and_track(context, update.effective_chat.id, "Usage: /title <@username or user_id> <title>\nOr, reply to a user's message with: /title <the title>")
             return
 
         target_identifier = context.args[0]
@@ -178,18 +180,18 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
 
         if not target_id:
-            await update.message.reply_text(f"Could not find user {target_identifier}.")
+            await send_message_and_track(context, update.effective_chat.id, f"Could not find user {target_identifier}.")
             return
 
         # We have an ID, but we need the user object for the display name later
         try:
             target_user = (await context.bot.get_chat_member(update.effective_chat.id, target_id)).user
         except Exception:
-            await update.message.reply_text(f"Could not retrieve user information for ID {target_id}.")
+            await send_message_and_track(context, update.effective_chat.id, f"Could not retrieve user information for ID {target_id}.")
             return
 
     if not target_user:
-        await update.message.reply_text("Could not determine target user.")
+        await send_message_and_track(context, update.effective_chat.id, "Could not determine target user.")
         return
 
     # Create the mention string BEFORE setting the title, so it uses the original name.
@@ -206,7 +208,7 @@ async def title_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user_titles(titles)
 
     # Now, use the original mention in the confirmation message.
-    await update.message.reply_text(f"Title for {original_user_mention} has been set to '{html.escape(title)}'.", parse_mode='HTML')
+    await send_message_and_track(context, update.effective_chat.id, f"Title for {original_user_mention} has been set to '{html.escape(title)}'.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -217,13 +219,13 @@ async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if update.message.reply_to_message:
         target_user = update.message.reply_to_message.from_user
         if context.args:
-            await update.message.reply_text("Usage (as reply): /removetitle (no arguments needed).")
+            await send_message_and_track(context, update.effective_chat.id, "Usage (as reply): /removetitle (no arguments needed).")
             return
 
     # Case 2: Command is not a reply, used with an argument
     else:
         if len(context.args) != 1:
-            await update.message.reply_text("Usage: /removetitle <@username or user_id>\nOr, reply to a user's message with just: /removetitle")
+            await send_message_and_track(context, update.effective_chat.id, "Usage: /removetitle <@username or user_id>\nOr, reply to a user's message with just: /removetitle")
             return
 
         target_identifier = context.args[0]
@@ -234,17 +236,17 @@ async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             target_id = await get_user_id_by_username(context, update.effective_chat.id, target_identifier)
 
         if not target_id:
-            await update.message.reply_text(f"Could not find user {target_identifier}.")
+            await send_message_and_track(context, update.effective_chat.id, f"Could not find user {target_identifier}.")
             return
 
         try:
             target_user = (await context.bot.get_chat_member(update.effective_chat.id, target_id)).user
         except Exception:
-            await update.message.reply_text(f"Could not retrieve user information for ID {target_id}.")
+            await send_message_and_track(context, update.effective_chat.id, f"Could not retrieve user information for ID {target_id}.")
             return
 
     if not target_user:
-        await update.message.reply_text("Could not determine target user.")
+        await send_message_and_track(context, update.effective_chat.id, "Could not determine target user.")
         return
 
     titles = load_user_titles()
@@ -256,19 +258,19 @@ async def removetitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         del titles[group_id_str][target_id_str]
         save_user_titles(titles)
         # Use the name *without* the title for the confirmation message.
-        await update.message.reply_text(f"Title for {html.escape(target_user.full_name)} has been removed for this group.", parse_mode='HTML')
+        await send_message_and_track(context, update.effective_chat.id, f"Title for {html.escape(target_user.full_name)} has been removed for this group.", parse_mode='HTML')
     else:
-        await update.message.reply_text(f"User {display_name} does not have a title in this group.", parse_mode='HTML')
+        await send_message_and_track(context, update.effective_chat.id, f"User {display_name} does not have a title in this group.", parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /viewstakes <user> - View all media staked by a user. """
     if not context.args:
-        await update.message.reply_text("Usage: /viewstakes <@username or user_id>")
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /viewstakes <@username or user_id>")
         return
 
     if update.effective_chat.type != "private":
-        await update.message.reply_text("This command can only be used in a private chat for privacy reasons.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in a private chat for privacy reasons.")
         return
 
     target_identifier = context.args[0]
@@ -286,20 +288,20 @@ async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 found = True
                 break
         if not found:
-            await update.message.reply_text(f"Could not find user {target_identifier} in my cache. Please use their user ID instead, or ensure I have seen them in a group recently.")
+            await send_message_and_track(context, update.effective_chat.id, f"Could not find user {target_identifier} in my cache. Please use their user ID instead, or ensure I have seen them in a group recently.")
             return
     else:
-        await update.message.reply_text("Please provide a valid user ID or a @username starting with '@'.")
+        await send_message_and_track(context, update.effective_chat.id, "Please provide a valid user ID or a @username starting with '@'.")
         return
 
     stakes = load_media_stakes()
     user_stakes = stakes.get(str(target_id))
 
     if not user_stakes:
-        await update.message.reply_text(f"No media stakes found for user {target_id}.")
+        await send_message_and_track(context, update.effective_chat.id, f"No media stakes found for user {target_id}.")
         return
 
-    await update.message.reply_text(f"Found {len(user_stakes)} media stake(s) for user {target_id}. Sending them now...")
+    await send_message_and_track(context, update.effective_chat.id, f"Found {len(user_stakes)} media stake(s) for user {target_id}. Sending them now...")
 
     for stake in user_stakes:
         opponent_text = f"against user {stake['opponent_id']}" if stake.get('opponent_id') else ""
@@ -310,13 +312,13 @@ async def viewstakes_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         try:
             if stake['media_type'] == 'photo':
-                await context.bot.send_photo(update.effective_chat.id, stake['file_id'], caption=caption)
+                await send_photo_and_track(context, update.effective_chat.id, stake['file_id'], caption=caption)
             elif stake['media_type'] == 'video':
-                await context.bot.send_video(update.effective_chat.id, stake['file_id'], caption=caption)
+                await send_video_and_track(context, update.effective_chat.id, stake['file_id'], caption=caption)
             elif stake['media_type'] == 'voice':
-                await context.bot.send_voice(update.effective_chat.id, stake['file_id'], caption=caption)
+                await send_voice_and_track(context, update.effective_chat.id, stake['file_id'], caption=caption)
         except Exception as e:
-            await update.message.reply_text(f"Could not send a stake (file_id: {stake['file_id']}). It might have expired. Error: {e}")
+            await send_message_and_track(context, update.effective_chat.id, f"Could not send a stake (file_id: {stake['file_id']}). It might have expired. Error: {e}")
             logger.error(f"Failed to send stake for user {target_id}: {e}")
 
 def load_admin_data():
@@ -397,11 +399,11 @@ def is_admin(user_id):
 async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /update - (Admin only) Syncs the admin list for the current group. """
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("This command is for bot admins only.")
+        await send_message_and_track(context, update.effective_chat.id, "This command is for bot admins only.")
         return
 
     if update.effective_chat.type not in ['group', 'supergroup']:
-        await update.message.reply_text("This command can only be used in a group.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in a group.")
         return
 
     chat_id_str = str(update.effective_chat.id)
@@ -459,13 +461,13 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response_lines.append("Admins removed from this group: " + ", ".join(removed_names))
 
         if not response_lines:
-            await update.message.reply_text("Admin list is already up to date for this group.")
+            await send_message_and_track(context, update.effective_chat.id, "Admin list is already up to date for this group.")
         else:
-            await update.message.reply_text("\n".join(response_lines), parse_mode='HTML')
+            await send_message_and_track(context, update.effective_chat.id, "\n".join(response_lines), parse_mode='HTML')
 
     except Exception as e:
         logger.error(f"Failed to update admins: {e}", exc_info=True)
-        await update.message.reply_text(f"An error occurred while updating admins: {e}")
+        await send_message_and_track(context, update.effective_chat.id, f"An error occurred while updating admins: {e}")
 
 async def get_user_id_by_username(context, chat_id, username) -> str:
     """Get a user's Telegram ID by their username, using the profile cache."""
@@ -546,11 +548,13 @@ async def send_message_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: in
     await _track_sent_message(message)
     return message
 
+
 async def send_photo_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, photo: str, **kwargs):
     """Sends a photo and tracks it."""
     message = await context.bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
     await _track_sent_message(message)
     return message
+
 
 async def send_video_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, video: str, **kwargs):
     """Sends a video and tracks it."""
@@ -558,8 +562,9 @@ async def send_video_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int,
     await _track_sent_message(message)
     return message
 
+
 async def send_voice_and_track(context: ContextTypes.DEFAULT_TYPE, chat_id: int, voice: str, **kwargs):
-    """Sends a voice message and tracks it."""
+    """Sends a voice note and tracks it."""
     message = await context.bot.send_voice(chat_id=chat_id, voice=voice, **kwargs)
     await _track_sent_message(message)
     return message
@@ -676,9 +681,10 @@ async def check_for_punishment(group_id, user_id, old_points, new_points, contex
                 # Punish the user
                 user_member = await context.bot.get_chat_member(group_id, user_id)
                 display_name = get_display_name(user_id, user_member.user.full_name, group_id)
-                await context.bot.send_message(
-                    chat_id=group_id,
-                    text=f"🚨 <b>Punishment Issued!</b> 🚨\n{display_name} has fallen below {threshold} points. Punishment: {message}",
+                await send_message_and_track(
+                    context,
+                    group_id,
+                    f"🚨 <b>Punishment Issued!</b> 🚨\n{display_name} has fallen below {threshold} points. Punishment: {message}",
                     parse_mode='HTML'
                 )
 
@@ -686,9 +692,10 @@ async def check_for_punishment(group_id, user_id, old_points, new_points, contex
                 admins = await context.bot.get_chat_administrators(group_id)
                 for admin in admins:
                     try:
-                        await context.bot.send_message(
-                            chat_id=admin.user.id,
-                            text=f"User {display_name} (ID: {user_id}) in group {chat.title} (ID: {group_id}) triggered punishment '{message}' by falling below {threshold} points.",
+                        await send_message_and_track(
+                            context,
+                            admin.user.id,
+                            f"User {display_name} (ID: {user_id}) in group {chat.title} (ID: {group_id}) triggered punishment '{message}' by falling below {threshold} points.",
                             parse_mode='HTML'
                         )
                     except Exception:
@@ -930,6 +937,18 @@ def check_connect_four_draw(board: list) -> bool:
     return all(cell != 0 for cell in board[0])
 
 
+async def track_message_for_game_deletion(game_id: str, message: telegram.Message):
+    """Adds a message to a game's deletion list."""
+    if not game_id or not message:
+        return
+    games_data = await load_games_data_async()
+    if game_id in games_data:
+        games_data[game_id].setdefault('messages_to_delete', []).append({
+            'chat_id': message.chat.id,
+            'message_id': message.message_id
+        })
+        await save_games_data_async(games_data)
+
 async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: str):
     """Deletes all tracked messages for a game and clears the list."""
     games_data = await load_games_data_async()
@@ -957,11 +976,7 @@ async def delete_tracked_messages(context: ContextTypes.DEFAULT_TYPE, game_id: s
 async def send_and_track_message(context, chat_id, game_id, text, **kwargs):
     """Sends a message and tracks it for later deletion."""
     sent_message = await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
-    games_data = await load_games_data_async()
-    if game_id in games_data:
-        logger.debug(f"Tracking message {sent_message.message_id} in chat {chat_id} for game {game_id}")
-        games_data[game_id].setdefault('messages_to_delete', []).append({'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id})
-        await save_games_data_async(games_data)
+    await track_message_for_game_deletion(game_id, sent_message)
     return sent_message
 
 async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, winner_id: int, loser_id: int):
@@ -988,20 +1003,25 @@ async def handle_game_over(context: ContextTypes.DEFAULT_TYPE, game_id: str, win
         await add_user_points(game['group_id'], winner_id, points_val, context)
         await add_user_points(game['group_id'], loser_id, -points_val, context)
         message = f"{winner_name} has won the game! {loser_name} lost {points_val} points."
-        await send_message_and_track(
+        await send_and_track_message(
             context,
             game['group_id'],
+            game_id,
             message,
             parse_mode='HTML'
         )
     else:  # media
         caption = f"{winner_name} won the game! This is the loser's stake from {loser_name}."
+        sent_message = None
         if loser_stake['type'] == 'photo':
-            await send_photo_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'video':
-            await send_video_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            sent_message = await context.bot.send_video(chat_id=game['group_id'], video=loser_stake['value'], caption=caption, parse_mode='HTML')
         elif loser_stake['type'] == 'voice':
-            await send_voice_and_track(context, game['group_id'], loser_stake['value'], caption=caption, parse_mode='HTML')
+            sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=loser_stake['value'], caption=caption, parse_mode='HTML')
+
+        if sent_message:
+            await track_message_for_game_deletion(game_id, sent_message)
 
     # Private messages to players (Battleship only)
     if game.get('game_type') == 'battleship':
@@ -1162,18 +1182,22 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
             if challenger_stake['type'] == 'points':
                 points_val = challenger_stake['value']
                 await add_user_points(game['group_id'], challenger_id, -points_val, context)
-                await send_message_and_track(context, game['group_id'], f"{challenger_name} lost {points_val} points in the draw.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{challenger_name} lost {points_val} points in the draw.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {challenger_name}'s stake from the drawn game."
+                sent_message = None
                 if challenger_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=challenger_stake['value'], caption=caption, parse_mode='HTML')
+
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process challenger's stake in draw for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {challenger_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {challenger_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     # Handle opponent's stake
     try:
@@ -1181,18 +1205,22 @@ async def handle_game_draw(context: ContextTypes.DEFAULT_TYPE, game_id: str):
             if opponent_stake['type'] == 'points':
                 points_val = opponent_stake['value']
                 await add_user_points(game['group_id'], opponent_id, -points_val, context)
-                await send_message_and_track(context, game['group_id'], f"{opponent_name} lost {points_val} points in the draw.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{opponent_name} lost {points_val} points in the draw.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {opponent_name}'s stake from the drawn game."
+                sent_message = None
                 if opponent_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption, parse_mode='HTML')
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=opponent_stake['value'], caption=caption, parse_mode='HTML')
+
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process opponent's stake in draw for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {opponent_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {opponent_name}'s stake due to an error (it may have expired).", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -1331,7 +1359,8 @@ async def handle_challenge_timeout(context: ContextTypes.DEFAULT_TYPE, game_id: 
     challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
     opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
-    await context.bot.send_message(
+    await send_message_and_track(
+        context,
         game['group_id'],
         f"The challenge from {challenger_name} to {opponent_name} expired due to inactivity and has been cancelled. No stakes were lost.",
         parse_mode='HTML'
@@ -1377,18 +1406,21 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
         if challenger_stake:
             if challenger_stake['type'] == 'points':
                 await add_user_points(game['group_id'], challenger_id, -challenger_stake['value'], context)
-                await send_message_and_track(context, game['group_id'], f"{challenger_name} lost their stake in the cancelled game.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{challenger_name} lost their stake in the cancelled game.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {challenger_name}'s stake from the cancelled game."
+                sent_message = None
                 if challenger_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=challenger_stake['value'], caption=caption, parse_mode='HTML')
                 elif challenger_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], challenger_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=challenger_stake['value'], caption=caption, parse_mode='HTML')
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process challenger's stake in cancellation for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {challenger_name}'s stake due to an error.", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {challenger_name}'s stake due to an error.", parse_mode='HTML')
 
 
     # Handle opponent's stake
@@ -1396,18 +1428,21 @@ async def handle_game_cancellation(context: ContextTypes.DEFAULT_TYPE, game_id: 
         if opponent_stake:
             if opponent_stake['type'] == 'points':
                 await add_user_points(game['group_id'], opponent_id, -opponent_stake['value'], context)
-                await send_message_and_track(context, game['group_id'], f"{opponent_name} lost their stake in the cancelled game.", parse_mode='HTML')
+                await send_and_track_message(context, game['group_id'], game_id, f"{opponent_name} lost their stake in the cancelled game.", parse_mode='HTML')
             else:  # media
                 caption = f"This was {opponent_name}'s stake from the cancelled game."
+                sent_message = None
                 if opponent_stake['type'] == 'photo':
-                    await send_photo_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_photo(chat_id=game['group_id'], photo=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'video':
-                    await send_video_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_video(chat_id=game['group_id'], video=opponent_stake['value'], caption=caption, parse_mode='HTML')
                 elif opponent_stake['type'] == 'voice':
-                    await send_voice_and_track(context, game['group_id'], opponent_stake['value'], caption=caption)
+                    sent_message = await context.bot.send_voice(chat_id=game['group_id'], voice=opponent_stake['value'], caption=caption, parse_mode='HTML')
+                if sent_message:
+                    await track_message_for_game_deletion(game_id, sent_message)
     except Exception as e:
         logger.error(f"Failed to process opponent's stake in cancellation for game {game_id}: {e}")
-        await send_message_and_track(context, game['group_id'], f"Could not process {opponent_name}'s stake due to an error.", parse_mode='HTML')
+        await send_and_track_message(context, game['group_id'], game_id, f"Could not process {opponent_name}'s stake due to an error.", parse_mode='HTML')
 
     game['status'] = 'complete'
     await save_games_data_async(games_data)
@@ -1460,7 +1495,7 @@ async def handle_tod_timeout(context: ContextTypes.DEFAULT_TYPE, tod_game_id: st
     )
     for admin_id in group_admins:
         try:
-            await context.bot.send_message(chat_id=admin_id, text=notification_text, parse_mode='HTML')
+            await send_message_and_track(context, admin_id, notification_text, parse_mode='HTML')
         except Exception as e:
             logger.warning(f"Failed to notify admin {admin_id} of ToD timeout: {e}")
 
@@ -1779,9 +1814,10 @@ async def bs_attack_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if all_sunk:
         winner_name = get_display_name(int(user_id_str), query.from_user.full_name, game['group_id'])
         win_message = f"The game is over! {winner_name} has won the battle!"
-        await context.bot.send_message(
-            chat_id=game['group_id'],
-            text=win_message,
+        await send_message_and_track(
+            context,
+            game['group_id'],
+            win_message,
             parse_mode='HTML'
         )
         await query.edit_message_text("You are victorious! See the group for the result.")
@@ -2198,9 +2234,10 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             for admin in admins:
                 try:
                     admin_message = f"The user {display_name} has selected the 'Other' reward in group {chat_title}. They will contact you to finalize the details."
-                    await context.bot.send_message(
-                        chat_id=admin.user.id,
-                        text=admin_message,
+                    await send_message_and_track(
+                        context,
+                        admin.user.id,
+                        admin_message,
                         parse_mode='HTML'
                     )
                 except Exception:
@@ -2209,20 +2246,21 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             return
         user_points = get_user_points(group_id, user_id)
         if user_points <= 0:
-            await update.message.reply_text(f"You must have a positive point balance to buy rewards. Your current balance is {user_points} points.")
+            await send_message_and_track(context, update.effective_chat.id, f"You must have a positive point balance to buy rewards. Your current balance is {user_points} points.")
             context.user_data.pop(REWARD_STATE, None)
             return
         if user_points < reward['cost']:
-            await update.message.reply_text(f"You do not have enough points for this reward. You have {user_points}, but it costs {reward['cost']}.")
+            await send_message_and_track(context, update.effective_chat.id, f"You do not have enough points for this reward. You have {user_points}, but it costs {reward['cost']}.")
             context.user_data.pop(REWARD_STATE, None)
             return
         await add_user_points(group_id, user_id, -reward['cost'], context)
 
         # Public announcement
         display_name = get_display_name(user_id, update.effective_user.full_name, group_id)
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"🎁 <b>{display_name}</b> just bought the reward: <b>{reward['name']}</b>! 🎉",
+        await send_message_and_track(
+            context,
+            update.effective_chat.id,
+            f"🎁 <b>{display_name}</b> just bought the reward: <b>{reward['name']}</b>! 🎉",
             parse_mode='HTML'
         )
 
@@ -2230,9 +2268,10 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         admins = await context.bot.get_chat_administrators(update.effective_chat.id)
         for admin in admins:
             try:
-                await context.bot.send_message(
-                    chat_id=admin.user.id,
-                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) just bought the reward: '{reward['name']}' for {reward['cost']} points.",
+                await send_message_and_track(
+                    context,
+                    admin.user.id,
+                    f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) just bought the reward: '{reward['name']}' for {reward['cost']} points.",
                     parse_mode='HTML'
                 )
             except Exception:
@@ -2247,10 +2286,10 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             value = int(update.message.text.strip())
         except ValueError:
-            await update.message.reply_text("Please reply with a valid integer number of points to add.")
+            await send_message_and_track(context, update.effective_chat.id, "Please reply with a valid integer number of points to add.")
             return
         await add_user_points(state['group_id'], state['target_id'], value, context)
-        await update.message.reply_text(f"Added {value} points.")
+        await send_message_and_track(context, update.effective_chat.id, f"Added {value} points.")
         context.user_data.pop(ADDPOINTS_STATE, None)
         return
 
@@ -2259,10 +2298,10 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             value = int(update.message.text.strip())
         except ValueError:
-            await update.message.reply_text("Please reply with a valid integer number of points to remove.")
+            await send_message_and_track(context, update.effective_chat.id, "Please reply with a valid integer number of points to remove.")
             return
         await add_user_points(state['group_id'], state['target_id'], -value, context)
-        await update.message.reply_text(f"Removed {value} points.")
+        await send_message_and_track(context, update.effective_chat.id, f"Removed {value} points.")
         context.user_data.pop(REMOVEPOINTS_STATE, None)
         return
 
@@ -2276,19 +2315,20 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         reward = next((r for r in rewards if r['name'].lower() == choice.lower()), None)
 
         if not reward:
-            await update.message.reply_text("That reward does not exist. The reward selection process has been cancelled. Please try the /chance command again later.")
+            await send_message_and_track(context, update.effective_chat.id, "That reward does not exist. The reward selection process has been cancelled. Please try the /chance command again later.")
             context.user_data.pop(FREE_REWARD_SELECTION, None)
             return
 
         display_name = get_display_name(user_id, update.effective_user.full_name, group_id)
-        await update.message.reply_text(f"Congratulations! You have claimed your free reward: <b>{reward['name']}</b>!", parse_mode='HTML')
+        await send_message_and_track(context, update.effective_chat.id, f"Congratulations! You have claimed your free reward: <b>{reward['name']}</b>!", parse_mode='HTML')
 
         admins = await context.bot.get_chat_administrators(update.effective_chat.id)
         for admin in admins:
             try:
-                await context.bot.send_message(
-                    chat_id=admin.user.id,
-                    text=f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) claimed the free reward: '{reward['name']}'.",
+                await send_message_and_track(
+                    context,
+                    admin.user.id,
+                    f"User {display_name} (ID: {user_id}) in group {update.effective_chat.title} (ID: {group_id}) claimed the free reward: '{reward['name']}'.",
                     parse_mode='HTML'
                 )
             except Exception:
@@ -2302,13 +2342,13 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         state = context.user_data[ASK_TASK_TARGET]
         username = update.message.text.strip()
         if not username.startswith('@'):
-            await update.message.reply_text("Please provide a valid @username.")
+            await send_message_and_track(context, update.effective_chat.id, "Please provide a valid @username.")
             return
 
         state['target_username'] = username
         context.user_data[ASK_TASK_DESCRIPTION] = state
         context.user_data.pop(ASK_TASK_TARGET, None)
-        await update.message.reply_text("What is the simple task you want to ask of them?")
+        await send_message_and_track(context, update.effective_chat.id, "What is the simple task you want to ask of them?")
         return
 
     if ASK_TASK_DESCRIPTION in context.user_data:
@@ -2321,13 +2361,14 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Announce in group
         message = f"{challenger_name} has a task for {target_username}: {task_description}"
-        await context.bot.send_message(
-            chat_id=group_id,
-            text=message,
+        await send_message_and_track(
+            context,
+            group_id,
+            message,
             parse_mode='HTML'
         )
 
-        await update.message.reply_text("Your task has been assigned.")
+        await send_message_and_track(context, update.effective_chat.id, "Your task has been assigned.")
         context.user_data.pop(ASK_TASK_DESCRIPTION, None)
         return
 
@@ -2338,9 +2379,9 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     if REWARD_STATE in context.user_data:
         context.user_data.pop(REWARD_STATE, None)
-        await update.message.reply_text("Reward selection cancelled.")
+        await send_message_and_track(context, update.effective_chat.id, "Reward selection cancelled.")
     else:
-        await update.message.reply_text("No reward selection in progress.")
+        await send_message_and_track(context, update.effective_chat.id, "No reward selection in progress.")
 
 @command_handler_wrapper(admin_only=True)
 async def addreward_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2348,10 +2389,10 @@ async def addreward_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /addreward (admin only): Start add reward process
     """
     if update.effective_chat.type == "private":
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
     context.user_data[ADDREWARD_STATE] = {'group_id': str(update.effective_chat.id)}
-    await update.message.reply_text("What is the name of the reward you want to add?")
+    await send_message_and_track(context, update.effective_chat.id, "What is the name of the reward you want to add?")
 
 @command_handler_wrapper(admin_only=True)
 async def addpunishment_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2359,17 +2400,17 @@ async def addpunishment_command(update: Update, context: ContextTypes.DEFAULT_TY
     /addpunishment <threshold> <message> (admin only): Adds a new punishment.
     """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     if len(context.args) < 2:
-        await update.message.reply_text("Usage: /addpunishment <threshold> <message>")
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /addpunishment <threshold> <message>")
         return
 
     try:
         threshold = int(context.args[0])
     except ValueError:
-        await update.message.reply_text("Threshold must be a number.")
+        await send_message_and_track(context, update.effective_chat.id, "Threshold must be a number.")
         return
 
     message = " ".join(context.args[1:])
@@ -2382,13 +2423,13 @@ async def addpunishment_command(update: Update, context: ContextTypes.DEFAULT_TY
     # Check for duplicates
     for p in punishments_data[group_id]:
         if p["message"].lower() == message.lower():
-            await update.message.reply_text("A punishment with this message already exists.")
+            await send_message_and_track(context, update.effective_chat.id, "A punishment with this message already exists.")
             return
 
     punishments_data[group_id].append({"threshold": threshold, "message": message})
     save_punishments_data(punishments_data)
 
-    await update.message.reply_text(f"Punishment added: '{message}' at {threshold} points.")
+    await send_message_and_track(context, update.effective_chat.id, f"Punishment added: '{message}' at {threshold} points.")
 
 @command_handler_wrapper(admin_only=True)
 async def removepunishment_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2396,11 +2437,11 @@ async def removepunishment_command(update: Update, context: ContextTypes.DEFAULT
     /removepunishment <message> (admin only): Removes a punishment.
     """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     if not context.args:
-        await update.message.reply_text("Usage: /removepunishment <message>")
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /removepunishment <message>")
         return
 
     message_to_remove = " ".join(context.args)
@@ -2408,17 +2449,17 @@ async def removepunishment_command(update: Update, context: ContextTypes.DEFAULT
     punishments_data = load_punishments_data()
 
     if group_id not in punishments_data:
-        await update.message.reply_text("No punishments found for this group.")
+        await send_message_and_track(context, update.effective_chat.id, "No punishments found for this group.")
         return
 
     initial_len = len(punishments_data[group_id])
     punishments_data[group_id] = [p for p in punishments_data[group_id] if p["message"].lower() != message_to_remove.lower()]
 
     if len(punishments_data[group_id]) == initial_len:
-        await update.message.reply_text("Punishment not found.")
+        await send_message_and_track(context, update.effective_chat.id, "Punishment not found.")
     else:
         save_punishments_data(punishments_data)
-        await update.message.reply_text("Punishment removed.")
+        await send_message_and_track(context, update.effective_chat.id, "Punishment removed.")
 
 @command_handler_wrapper(admin_only=False)
 async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2426,11 +2467,11 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /newgame (as a reply): Starts a new game with the replied-to user.
     """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     if not update.message.reply_to_message:
-        await update.message.reply_text("Please use this command as a reply to the user you want to challenge.")
+        await send_message_and_track(context, update.effective_chat.id, "Please use this command as a reply to the user you want to challenge.")
         return
 
     challenger_user = update.effective_user
@@ -2439,11 +2480,11 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cache_user_profile(opponent_user)
 
     if challenger_user.id == opponent_user.id:
-        await update.message.reply_text("You cannot challenge yourself.")
+        await send_message_and_track(context, update.effective_chat.id, "You cannot challenge yourself.")
         return
 
     if opponent_user.id == context.bot.id:
-        await update.message.reply_text("You cannot challenge me, I'm just the referee!")
+        await send_message_and_track(context, update.effective_chat.id, "You cannot challenge me, I'm just the referee!")
         return
 
     games_data = await load_games_data_async()
@@ -2452,7 +2493,7 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # This does not block Truth or Dare games, which are stored in a separate file.
     for game in games_data.values():
         if game.get('group_id') == group_id and game.get('status') != 'complete':
-            await update.message.reply_text("There is already an active 2-player game in this group. Please wait for it to finish.")
+            await send_message_and_track(context, update.effective_chat.id, "There is already an active 2-player game in this group. Please wait for it to finish.")
             return
 
     game_id = str(uuid.uuid4())
@@ -2500,9 +2541,10 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await save_games_data_async(games_data)
             logger.info(f"Cleaned up limbo game {game_id} due to PM failure.")
 
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"{challenger_user.mention_html()}, I couldn't send you a private message to set up the game. "
+        await send_message_and_track(
+            context,
+            update.effective_chat.id,
+            f"{challenger_user.mention_html()}, I couldn't send you a private message to set up the game. "
                  f"Please make sure you have started a chat with me privately first. The challenge has been cancelled.",
             parse_mode='HTML'
         )
@@ -2513,11 +2555,11 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /loser <user> (admin only): Enacts the loser condition for the specified user.
     """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     if not context.args:
-        await update.message.reply_text("Usage: /loser <@username or user_id>")
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /loser <@username or user_id>")
         return
 
     loser_username = context.args[0]
@@ -2526,7 +2568,7 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             loser_id = int(loser_username)
         except ValueError:
-            await update.message.reply_text(f"Could not find user {loser_username}.")
+            await send_message_and_track(context, update.effective_chat.id, f"Could not find user {loser_username}.")
             return
 
     games_data = await load_games_data_async()
@@ -2539,7 +2581,7 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             latest_game_id = game_id
 
     if not latest_game_id:
-        await update.message.reply_text(f"No active game found for user {loser_username}.")
+        await send_message_and_track(context, update.effective_chat.id, f"No active game found for user {loser_username}.")
         return
 
     game = games_data[latest_game_id]
@@ -2556,7 +2598,7 @@ async def loser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /stopgame - (Admin only) Manually stops the current game in the group. """
     if update.effective_chat.type not in ['group', 'supergroup']:
-        await update.message.reply_text("This command can only be used in a group.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in a group.")
         return
 
     group_id = update.effective_chat.id
@@ -2569,7 +2611,7 @@ async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
     if not active_game_id:
-        await update.message.reply_text("There is no active game in this group to stop.")
+        await send_message_and_track(context, update.effective_chat.id, "There is no active game in this group to stop.")
         return
 
     game = games_data[active_game_id]
@@ -2580,7 +2622,8 @@ async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenger_name = get_display_name(challenger_id, challenger_member.user.full_name, game['group_id'])
     opponent_name = get_display_name(opponent_id, opponent_member.user.full_name, game['group_id'])
 
-    await context.bot.send_message(
+    await send_message_and_track(
+        context,
         game['group_id'],
         f"The game between {challenger_name} and {opponent_name} has been manually stopped by an admin. No stakes were lost.",
         parse_mode='HTML'
@@ -2596,11 +2639,11 @@ async def stopgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def snooze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /snooze [minutes] [count] - (Admin) Sets the dare snooze options for this group. """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     if len(context.args) != 2:
-        await update.message.reply_text("Usage: /snooze <minutes> <count>\nExample: /snooze 60 2 (allows 2 snoozes of 60 minutes each)\nSet minutes or count to 0 to disable snoozing.")
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /snooze <minutes> <count>\nExample: /snooze 60 2 (allows 2 snoozes of 60 minutes each)\nSet minutes or count to 0 to disable snoozing.")
         return
 
     try:
@@ -2609,7 +2652,7 @@ async def snooze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if minutes < 0 or count < 0:
             raise ValueError
     except ValueError:
-        await update.message.reply_text("Please provide valid, non-negative numbers for minutes and count.")
+        await send_message_and_track(context, update.effective_chat.id, "Please provide valid, non-negative numbers for minutes and count.")
         return
 
     group_id = str(update.effective_chat.id)
@@ -2618,16 +2661,16 @@ async def snooze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_snooze_settings(settings)
 
     if minutes == 0 or count == 0:
-        await update.message.reply_text("Snoozing for dares has been disabled in this group.")
+        await send_message_and_track(context, update.effective_chat.id, "Snoozing for dares has been disabled in this group.")
     else:
-        await update.message.reply_text(f"Dare snooze settings updated: users can now snooze up to {count} time(s) for {minutes} minute(s) each.")
+        await send_message_and_track(context, update.effective_chat.id, f"Dare snooze settings updated: users can now snooze up to {count} time(s) for {minutes} minute(s) each.")
 
 
 @command_handler_wrapper(admin_only=True)
 async def stopdare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ /stopdare - (Admin only) Manually stops the current Truth or Dare game in the group. """
     if update.effective_chat.type not in ['group', 'supergroup']:
-        await update.message.reply_text("This command can only be used in a group.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in a group.")
         return
 
     group_id = str(update.effective_chat.id)
@@ -2642,16 +2685,17 @@ async def stopdare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
     if not active_tod_game_id:
-        await update.message.reply_text("There is no active Truth or Dare game in this group to stop.")
+        await send_message_and_track(context, update.effective_chat.id, "There is no active Truth or Dare game in this group to stop.")
         return
 
     user_id = active_tod_game['user_id']
     user_member = await context.bot.get_chat_member(group_id, user_id)
     display_name = get_display_name(user_id, user_member.user.full_name, int(group_id))
 
-    await context.bot.send_message(
-        chat_id=group_id,
-        text=f"The Truth or Dare for {display_name} has been manually stopped by an admin.",
+    await send_message_and_track(
+        context,
+        group_id,
+        f"The Truth or Dare for {display_name} has been manually stopped by an admin.",
         parse_mode='HTML'
     )
 
@@ -2742,7 +2786,7 @@ async def cleangames_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     /cleangames (admin only): Clears out completed or stale game data.
     """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     games_data = await load_games_data_async()
@@ -2752,10 +2796,10 @@ async def cleangames_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     }
 
     if len(games_to_keep) == len(games_data):
-        await update.message.reply_text("No completed games to clean up.")
+        await send_message_and_track(context, update.effective_chat.id, "No completed games to clean up.")
     else:
         await save_games_data_async(games_to_keep)
-        await update.message.reply_text("Cleaned up completed games.")
+        await send_message_and_track(context, update.effective_chat.id, "Cleaned up completed games.")
 
 @command_handler_wrapper(admin_only=True)
 async def punishment_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2763,7 +2807,7 @@ async def punishment_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     /punishment (admin only): Lists all punishments for the group.
     """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     group_id = str(update.effective_chat.id)
@@ -2771,14 +2815,14 @@ async def punishment_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     group_punishments = punishments_data.get(group_id, [])
 
     if not group_punishments:
-        await update.message.reply_text("No punishments have been set for this group.")
+        await send_message_and_track(context, update.effective_chat.id, "No punishments have been set for this group.")
         return
 
     msg = "<b>Configured Punishments:</b>\n"
     for p in sorted(group_punishments, key=lambda x: x['threshold'], reverse=True):
         msg += f"• Below <b>{p['threshold']}</b> points: <i>{p['message']}</i>\n"
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await send_message_and_track(context, update.effective_chat.id, msg, parse_mode='HTML')
 
 @command_handler_wrapper(admin_only=True)
 async def removereward_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2786,7 +2830,7 @@ async def removereward_command(update: Update, context: ContextTypes.DEFAULT_TYP
     /removereward (admin only): Start remove reward process
     """
     context.user_data[REMOVEREWARD_STATE] = {'group_id': str(update.effective_chat.id)}
-    await update.message.reply_text("What is the name of the reward you want to remove?")
+    await send_message_and_track(context, update.effective_chat.id, "What is the name of the reward you want to remove?")
 
 @command_handler_wrapper(admin_only=True)
 async def addpoints_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2799,7 +2843,7 @@ async def addpoints_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_id = update.message.reply_to_message.from_user.id
     else:
         if not context.args:
-            await update.message.reply_text("Usage: /addpoints <username|id> or reply to a user's message.")
+            await send_message_and_track(context, update.effective_chat.id, "Usage: /addpoints <username|id> or reply to a user's message.")
             return
         arg = context.args[0].strip()
         # Try to resolve by ID
@@ -2810,10 +2854,10 @@ async def addpoints_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_id = await get_user_id_by_username(context, update.effective_chat.id, arg)
             # get_chat_member with username will not work unless it's a numeric ID
     if not target_id:
-        await update.message.reply_text(f"Could not resolve user. Please reply to a user's message or provide a valid user ID.")
+        await send_message_and_track(context, update.effective_chat.id, f"Could not resolve user. Please reply to a user's message or provide a valid user ID.")
         return
     context.user_data[ADDPOINTS_STATE] = {'group_id': group_id, 'target_id': target_id}
-    await update.message.reply_text(f"How many points do you want to add to this user?")
+    await send_message_and_track(context, update.effective_chat.id, f"How many points do you want to add to this user?")
 
 @command_handler_wrapper(admin_only=True)
 async def removepoints_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2826,7 +2870,7 @@ async def removepoints_command(update: Update, context: ContextTypes.DEFAULT_TYP
         target_id = update.message.reply_to_message.from_user.id
     else:
         if not context.args:
-            await update.message.reply_text("Usage: /removepoints <username|id> or reply to a user's message.")
+            await send_message_and_track(context, update.effective_chat.id, "Usage: /removepoints <username|id> or reply to a user's message.")
             return
         arg = context.args[0].strip()
         # Try to resolve by ID
@@ -2837,10 +2881,10 @@ async def removepoints_command(update: Update, context: ContextTypes.DEFAULT_TYP
             target_id = await get_user_id_by_username(context, update.effective_chat.id, arg)
             # get_chat_member with username will not work unless it's a numeric ID
     if not target_id:
-        await update.message.reply_text(f"Could not resolve user. Please reply to a user's message or provide a valid user ID.")
+        await send_message_and_track(context, update.effective_chat.id, f"Could not resolve user. Please reply to a user's message or provide a valid user ID.")
         return
     context.user_data[REMOVEPOINTS_STATE] = {'group_id': group_id, 'target_id': target_id}
-    await update.message.reply_text(f"How many points do you want to remove from this user?")
+    await send_message_and_track(context, update.effective_chat.id, f"How many points do you want to remove from this user?")
 
 @command_handler_wrapper(admin_only=False)
 async def point_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2878,16 +2922,16 @@ async def point_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     target_id = await get_user_id_by_username(context, group_id, arg)
 
                 if not target_id:
-                    await update.message.reply_text(f"Could not resolve user '{arg}'.")
+                    await send_message_and_track(context, update.effective_chat.id, f"Could not resolve user '{arg}'.")
                     return
                 try:
                     target_user = (await context.bot.get_chat_member(group_id, target_id)).user
                 except Exception:
-                    await update.message.reply_text(f"Could not resolve user '{arg}'.")
+                    await send_message_and_track(context, update.effective_chat.id, f"Could not resolve user '{arg}'.")
                     return
         else:
             # Non-admin is trying to see someone else's points
-            await update.message.reply_text("Only admins can view other users' points. Showing your own points instead.")
+            await send_message_and_track(context, update.effective_chat.id, "Only admins can view other users' points. Showing your own points instead.")
             target_user = user # Reset to self
 
     # Fetch and display points for the determined target
@@ -2907,7 +2951,7 @@ async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = str(update.effective_chat.id)
     data = load_points_data().get(group_id, {})
     if not data:
-        await update.message.reply_text("No points data for this group yet.")
+        await send_message_and_track(context, update.effective_chat.id, "No points data for this group yet.")
         return
     # Sort by points descending
     top5 = sorted(data.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -2921,7 +2965,7 @@ async def top5_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = f"User {uid}"
         lines.append(f"<b>{idx}.</b> <i>{name}</i> — <b>{pts} points</b> {'🏆' if idx==1 else ''}")
     msg = '\n'.join(lines)
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await send_message_and_track(context, update.effective_chat.id, msg, parse_mode='HTML')
 
 # =============================
 # /command - List all commands
@@ -2948,7 +2992,7 @@ async def command_list_command(update: Update, context: ContextTypes.DEFAULT_TYP
     Dynamically lists all available commands based on user's admin status and disabled commands.
     """
     if update.effective_chat.type == "private":
-        await update.message.reply_text("Please use this command in a group to see the available commands for that group.")
+        await send_message_and_track(context, update.effective_chat.id, "Please use this command in a group to see the available commands for that group.")
         return
 
     group_id = str(update.effective_chat.id)
@@ -2983,7 +3027,7 @@ async def command_list_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if is_admin_user:
         msg += '\n\n<b>Commands for admins only:</b>\n' + ('\n'.join(admin_only_cmds) if admin_only_cmds else 'None')
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    await send_message_and_track(context, update.effective_chat.id, msg, parse_mode='HTML')
 
 
 @command_handler_wrapper(admin_only=False)
@@ -3013,7 +3057,7 @@ You can choose from the following challenge games:
 - <b>Battleship</b>: The classic naval combat game. Place your ships and try to sink your opponent's fleet.
 - <b>Tic-Tac-Toe</b>: The classic 3x3 grid game. A draw results in both players losing their stake.
     """
-    await update.message.reply_text(game_list_text, parse_mode='HTML', disable_web_page_preview=True)
+    await send_message_and_track(context, update.effective_chat.id, game_list_text, parse_mode='HTML', disable_web_page_preview=True)
 
 
 # =============================
@@ -3023,7 +3067,7 @@ You can choose from the following challenge games:
 async def addtod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the conversation to add a new truth or dare."""
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     keyboard = [
@@ -3033,7 +3077,7 @@ async def addtod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("What would you like to add?", reply_markup=reply_markup)
+    await send_message_and_track(context, update.effective_chat.id, "What would you like to add?", reply_markup=reply_markup)
 
 async def addtod_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the user's choice of adding a truth or a dare, then asks for point value."""
@@ -3077,7 +3121,7 @@ async def addtod_points_handler(update: Update, context: ContextTypes.DEFAULT_TY
 async def tod_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the ToD conversation."""
     if update.message:
-        await update.message.reply_text("Truth or Dare game cancelled.")
+        await send_message_and_track(context, update.effective_chat.id, "Truth or Dare game cancelled.")
     elif update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text("Truth or Dare game cancelled.")
@@ -3097,7 +3141,7 @@ async def tod_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """ /dareme - Starts a game of Truth or Dare. """
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return ConversationHandler.END
 
     active_games = await load_active_tod_games()
@@ -3107,9 +3151,9 @@ async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     for game in active_games.values():
         if game.get('group_id') == group_id:
             if game.get('user_id') == user_id:
-                await update.message.reply_text("You already have an active truth or dare! Please complete or refuse it first.")
+                await send_message_and_track(context, update.effective_chat.id, "You already have an active truth or dare! Please complete or refuse it first.")
             else:
-                await update.message.reply_text("There is already an active Truth or Dare game in this group. Please wait for it to finish.")
+                await send_message_and_track(context, update.effective_chat.id, "There is already an active Truth or Dare game in this group. Please wait for it to finish.")
             return ConversationHandler.END
 
     keyboard = [
@@ -3119,7 +3163,7 @@ async def dareme_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"{update.effective_user.mention_html()}, pick your poison:", reply_markup=reply_markup, parse_mode='HTML')
+    await send_message_and_track(context, update.effective_chat.id, f"{update.effective_user.mention_html()}, pick your poison:", reply_markup=reply_markup, parse_mode='HTML')
     return TOD_CHOICE
 
 
@@ -3237,7 +3281,7 @@ async def tod_refuse_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     for admin_id in group_admins:
         try:
-            await context.bot.send_message(chat_id=admin_id, text=notification_text, parse_mode='HTML')
+            await send_message_and_track(context, admin_id, notification_text, parse_mode='HTML')
         except Exception as e:
             logger.warning(f"Failed to notify admin {admin_id} of dare refusal: {e}")
 
@@ -3495,7 +3539,7 @@ async def notimer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def managetod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """(Admin) /managetod - Manage the list of truths and dares for this group."""
     if update.effective_chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
 
     keyboard = [
@@ -3505,7 +3549,7 @@ async def managetod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Please choose which list you want to manage:", reply_markup=reply_markup)
+    await send_message_and_track(context, update.effective_chat.id, "Please choose which list you want to manage:", reply_markup=reply_markup)
 
 async def manage_tod_view_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """(Admin) Displays a paginated list of truths or dares with remove buttons."""
@@ -3603,9 +3647,10 @@ async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFA
         await add_user_points(int(chat_id), user.id, points_to_award, context)
 
         display_name = get_display_name(user.id, user.full_name, int(chat_id))
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"🎉 {display_name} has completed their {game_details['type']} and earned {points_to_award} points! 🎉",
+        await send_message_and_track(
+            context,
+            chat_id,
+            f"🎉 {display_name} has completed their {game_details['type']} and earned {points_to_award} points! 🎉",
             parse_mode='HTML'
         )
 
@@ -3626,7 +3671,7 @@ async def tod_handle_proof_submission(update: Update, context: ContextTypes.DEFA
         return ConversationHandler.END
     else:
         expected_proof = "a photo or video" if game_details['type'] == 'dare' else "a text message or voice note"
-        await message.reply_text(f"That's not the right kind of proof for a {game_details['type']}. Please send {expected_proof}.")
+        await send_message_and_track(context, message.chat_id, f"That's not the right kind of proof for a {game_details['type']}. Please send {expected_proof}.")
         return TOD_PROOF
 
 
@@ -3645,20 +3690,20 @@ def save_disabled_commands(data):
 @command_handler_wrapper(admin_only=True)
 async def disable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
     if not context.args:
-        await update.message.reply_text("Usage: /disable <command>")
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /disable <command>")
         return
 
     cmd_to_disable = context.args[0].lstrip('/').lower()
 
     if cmd_to_disable not in COMMAND_MAP:
-        await update.message.reply_text(f"No such command: /{cmd_to_disable}")
+        await send_message_and_track(context, update.effective_chat.id, f"No such command: /{cmd_to_disable}")
         return
 
     if cmd_to_disable in ['disable', 'enable']:
-        await update.message.reply_text(f"You cannot disable this command.")
+        await send_message_and_track(context, update.effective_chat.id, f"You cannot disable this command.")
         return
 
     group_id = str(update.effective_chat.id)
@@ -3670,29 +3715,29 @@ async def disable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     disabled_data[group_id] = list(disabled_in_group) # Convert back to list for JSON
 
     save_disabled_commands(disabled_data)
-    await update.message.reply_text(f"Command /{cmd_to_disable} has been disabled in this group. Admins can re-enable it with /enable {cmd_to_disable}.")
+    await send_message_and_track(context, update.effective_chat.id, f"Command /{cmd_to_disable} has been disabled in this group. Admins can re-enable it with /enable {cmd_to_disable}.")
 
 # /enable - Enable a static command (admin only)
 @command_handler_wrapper(admin_only=True)
 async def enable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
-        await update.message.reply_text("This command can only be used in group chats.")
+        await send_message_and_track(context, update.effective_chat.id, "This command can only be used in group chats.")
         return
     if not context.args:
-        await update.message.reply_text("Usage: /enable <command>")
+        await send_message_and_track(context, update.effective_chat.id, "Usage: /enable <command>")
         return
 
     cmd_to_enable = context.args[0].lstrip('/').lower()
 
     if cmd_to_enable not in COMMAND_MAP:
-        await update.message.reply_text(f"No such command: /{cmd_to_enable}")
+        await send_message_and_track(context, update.effective_chat.id, f"No such command: /{cmd_to_enable}")
         return
 
     group_id = str(update.effective_chat.id)
     disabled_data = load_disabled_commands()
 
     if group_id not in disabled_data:
-        await update.message.reply_text(f"Command /{cmd_to_enable} is not disabled.")
+        await send_message_and_track(context, update.effective_chat.id, f"Command /{cmd_to_enable} is not disabled.")
         return
 
     # Use a set for efficient operations
@@ -3702,9 +3747,9 @@ async def enable_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disabled_in_group.remove(cmd_to_enable)
         disabled_data[group_id] = list(disabled_in_group)
         save_disabled_commands(disabled_data)
-        await update.message.reply_text(f"Command /{cmd_to_enable} has been enabled.")
+        await send_message_and_track(context, update.effective_chat.id, f"Command /{cmd_to_enable} has been enabled.")
     else:
-        await update.message.reply_text(f"Command /{cmd_to_enable} is not disabled.")
+        await send_message_and_track(context, update.effective_chat.id, f"Command /{cmd_to_enable} is not disabled.")
 
 #Start command
 @command_handler_wrapper(admin_only=False)
@@ -3726,9 +3771,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_message_and_track(context, update.effective_chat.id, "Please message me in private to use /start.")
         try:
             # Also send the welcome message privately if possible
-            await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text=start_message
+            await send_message_and_track(
+                context,
+                update.effective_user.id,
+                start_message
             )
         except Exception:
             # Silently fail if user has not started a chat with the bot
@@ -3736,7 +3782,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # In a private chat, send the full welcome message.
-    await update.message.reply_text(start_message)
+    await send_message_and_track(context, update.effective_chat.id, start_message)
 
 #Help command
 @command_handler_wrapper(admin_only=False)
@@ -3759,7 +3805,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await send_message_and_track(
+        context,
+        update.effective_chat.id,
         "Welcome to the help menu! Please choose a category:",
         reply_markup=reply_markup
     )
@@ -3906,7 +3954,7 @@ async def game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game or game.get('status') == 'complete':
-        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        await send_message_and_track(context, query.message.chat_id, "This game has been cancelled or is no longer valid.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -3953,7 +4001,7 @@ async def round_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game or game.get('status') == 'complete':
-        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        await send_message_and_track(context, query.message.chat_id, "This game has been cancelled or is no longer valid.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -3988,7 +4036,7 @@ async def stake_type_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game or game.get('status') == 'complete':
-        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        await send_message_and_track(context, query.message.chat_id, "This game has been cancelled or is no longer valid.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -4027,7 +4075,7 @@ async def stake_submission_points(update: Update, context: ContextTypes.DEFAULT_
     games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game or game.get('status') == 'complete':
-        await update.message.reply_text("This game has been cancelled or is no longer valid.")
+        await send_message_and_track(context, update.message.chat_id, "This game has been cancelled or is no longer valid.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -4088,7 +4136,7 @@ async def stake_submission_media(update: Update, context: ContextTypes.DEFAULT_T
     games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game or game.get('status') == 'complete':
-        await update.message.reply_text("This game has been cancelled or is no longer valid.")
+        await send_message_and_track(context, update.message.chat_id, "This game has been cancelled or is no longer valid.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -4200,14 +4248,16 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE, game_id: str):
         placement_keyboard = [[InlineKeyboardButton("Begin Ship Placement", callback_data=f'bs:placement:start:{game_id}')]]
         placement_markup = InlineKeyboardMarkup(placement_keyboard)
         try:
-            await context.bot.send_message(
-                chat_id=game['challenger_id'],
-                text="Your Battleship game is ready! It's time to place your ships.",
+            await send_message_and_track(
+                context,
+                game['challenger_id'],
+                "Your Battleship game is ready! It's time to place your ships.",
                 reply_markup=placement_markup
             )
-            await context.bot.send_message(
-                chat_id=game['opponent_id'],
-                text="Your Battleship game is ready! It's time to place your ships.",
+            await send_message_and_track(
+                context,
+                game['opponent_id'],
+                "Your Battleship game is ready! It's time to place your ships.",
                 reply_markup=placement_markup
             )
         except Exception:
@@ -4264,7 +4314,7 @@ async def start_opponent_setup(update: Update, context: ContextTypes.DEFAULT_TYP
     game = games_data.get(game_id)
 
     if not game or game['opponent_id'] != query.from_user.id:
-        await query.edit_message_text("This is not a valid game for you to set up.")
+        await send_message_and_track(context, query.message.chat_id, "This is not a valid game for you to set up.")
         return ConversationHandler.END
 
     context.user_data['game_id'] = game_id
@@ -4295,7 +4345,7 @@ async def cancel_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         except telegram.error.BadRequest:
             logger.warning("Failed to edit message on game cancel, it might have been deleted already.")
     elif update.message:
-        await update.message.reply_text("Game setup cancelled.")
+        await send_message_and_track(context, update.effective_chat.id, "Game setup cancelled.")
 
     if game_id:
         await delete_tracked_messages(context, game_id)
@@ -4318,7 +4368,7 @@ async def confirm_game_setup(update: Update, context: ContextTypes.DEFAULT_TYPE)
     games_data = await load_games_data_async()
     game = games_data.get(game_id)
     if not game or game.get('status') == 'complete':
-        await query.edit_message_text("This game has been cancelled or is no longer valid.")
+        await send_message_and_track(context, query.message.chat_id, "This game has been cancelled or is no longer valid.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -4400,11 +4450,7 @@ async def dice_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update_game_activity(active_game_id)
 
-    # Track the user's dice message for deletion
-    active_game.setdefault('messages_to_delete', []).append({
-        'chat_id': update.effective_chat.id,
-        'message_id': update.message.message_id
-    })
+    await track_message_for_game_deletion(active_game_id, update.message)
 
     last_roll = active_game.get('last_roll')
 
@@ -4494,7 +4540,7 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
     game = games_data.get(game_id)
 
     if not game:
-        await query.edit_message_text("This game challenge is no longer valid.")
+        await send_message_and_track(context, query.message.chat_id, "This game challenge is no longer valid.")
         return
 
     user_id = update.effective_user.id
