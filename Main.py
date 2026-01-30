@@ -2127,8 +2127,15 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if any(isinstance(key, tuple) for key in context.user_data.keys()):
         return
 
+    current_chat_id = str(update.effective_chat.id)
+
+    def is_state_for_current_chat(key):
+        """Helper to check if a manual state belongs to the current chat."""
+        state = context.user_data.get(key)
+        return isinstance(state, dict) and str(state.get('group_id')) == current_chat_id
+
     # === Add ToD Content Flow ===
-    if AWAITING_TOD_CONTENT in context.user_data:
+    if AWAITING_TOD_CONTENT in context.user_data and is_state_for_current_chat(AWAITING_TOD_CONTENT):
         state = context.user_data[AWAITING_TOD_CONTENT]
         add_type = state.get('type')
         points = state.get('points')
@@ -2138,7 +2145,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data.clear()
             return
 
-        group_id = str(update.effective_chat.id)
+        group_id = state.get('group_id')
 
         # Create a list of new item objects from the message text
         new_items_text = [item.strip() for item in update.message.text.split('\n') if item.strip()]
@@ -2163,7 +2170,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # === Add Reward Flow: Step 2 (Cost) ===
-    if ADDREWARD_COST_STATE in context.user_data:
+    if ADDREWARD_COST_STATE in context.user_data and is_state_for_current_chat(ADDREWARD_COST_STATE):
         state = context.user_data[ADDREWARD_COST_STATE]
         try:
             cost = int(update.message.text.strip())
@@ -2182,7 +2189,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # === Add Reward Flow: Step 1 (Name) ===
-    if ADDREWARD_STATE in context.user_data:
+    if ADDREWARD_STATE in context.user_data and is_state_for_current_chat(ADDREWARD_STATE):
         state = context.user_data[ADDREWARD_STATE]
         name = update.message.text.strip()
         if name.lower() == "other":
@@ -2196,7 +2203,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # === Remove Reward Flow ===
-    if REMOVEREWARD_STATE in context.user_data:
+    if REMOVEREWARD_STATE in context.user_data and is_state_for_current_chat(REMOVEREWARD_STATE):
         state = context.user_data[REMOVEREWARD_STATE]
         name = update.message.text.strip()
         if name.lower() == "other":
@@ -2212,7 +2219,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # === User Reward Choice Flow ===
-    if REWARD_STATE in context.user_data:
+    if REWARD_STATE in context.user_data and is_state_for_current_chat(REWARD_STATE):
         state = context.user_data[REWARD_STATE]
         group_id = state['group_id']
         user_id = update.effective_user.id
@@ -2281,7 +2288,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # === Add/Remove Points Flow ===
-    if ADDPOINTS_STATE in context.user_data:
+    if ADDPOINTS_STATE in context.user_data and is_state_for_current_chat(ADDPOINTS_STATE):
         state = context.user_data[ADDPOINTS_STATE]
         try:
             value = int(update.message.text.strip())
@@ -2293,7 +2300,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data.pop(ADDPOINTS_STATE, None)
         return
 
-    if REMOVEPOINTS_STATE in context.user_data:
+    if REMOVEPOINTS_STATE in context.user_data and is_state_for_current_chat(REMOVEPOINTS_STATE):
         state = context.user_data[REMOVEPOINTS_STATE]
         try:
             value = int(update.message.text.strip())
@@ -2306,7 +2313,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # === Free Reward Flow ===
-    if FREE_REWARD_SELECTION in context.user_data:
+    if FREE_REWARD_SELECTION in context.user_data and is_state_for_current_chat(FREE_REWARD_SELECTION):
         state = context.user_data[FREE_REWARD_SELECTION]
         group_id = state['group_id']
         user_id = update.effective_user.id
@@ -2338,7 +2345,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # === Ask Task Flow ===
-    if ASK_TASK_TARGET in context.user_data:
+    if ASK_TASK_TARGET in context.user_data and is_state_for_current_chat(ASK_TASK_TARGET):
         state = context.user_data[ASK_TASK_TARGET]
         username = update.message.text.strip()
         if not username.startswith('@'):
@@ -2351,7 +2358,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await send_message_and_track(context, update.effective_chat.id, "What is the simple task you want to ask of them?")
         return
 
-    if ASK_TASK_DESCRIPTION in context.user_data:
+    if ASK_TASK_DESCRIPTION in context.user_data and is_state_for_current_chat(ASK_TASK_DESCRIPTION):
         state = context.user_data[ASK_TASK_DESCRIPTION]
         task_description = update.message.text.strip()
         group_id = state['group_id']
@@ -3112,7 +3119,11 @@ async def addtod_points_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     # Set the state for the main conversation handler
-    context.user_data[AWAITING_TOD_CONTENT] = {'type': choice_type, 'points': points}
+    context.user_data[AWAITING_TOD_CONTENT] = {
+        'type': choice_type,
+        'points': points,
+        'group_id': str(update.effective_chat.id)
+    }
 
     await query.edit_message_text(f"Please send the {choice_type}(s) you'd like to add (worth {points} points each). You can send multiple in one message, just put each one on a new line.")
 
