@@ -2124,10 +2124,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     Handles all conversation-based interactions after a command has been issued.
     This acts as a router based on the state stored in context.user_data.
     """
-    # Heuristic check to see if a ConversationHandler is active.
-    # Its state is stored under a tuple key, while this manual handler uses string keys.
-    # If a ConversationHandler is active, we should not interfere.
-    if any(isinstance(key, tuple) for key in context.user_data.keys()):
+    if not update.message or not update.message.text:
         return
 
     current_chat_id = str(update.effective_chat.id)
@@ -2155,7 +2152,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if not add_type or points is None:
             await update.message.reply_text("Something went wrong (missing type or points), please start over with /addtod.")
             context.user_data.clear()
-            return
+            raise ApplicationHandlerStop
 
         group_id = state.get('group_id')
 
@@ -2163,7 +2160,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         new_items_text = [item.strip() for item in update.message.text.split('\n') if item.strip()]
         if not new_items_text:
             await update.message.reply_text("I didn't receive any content. Please try again, or /cancel to exit.")
-            return
+            raise ApplicationHandlerStop
 
         new_items_obj = [{'text': text, 'points': points} for text in new_items_text]
 
@@ -2190,7 +2187,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 raise ValueError
         except ValueError:
             await update.message.reply_text("Please reply with a valid positive integer for the cost.")
-            return
+            raise ApplicationHandlerStop
         group_id = state['group_id']
         name = state['name']
         if add_reward(group_id, name, cost):
@@ -2207,7 +2204,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if name.lower() == "other":
             await update.message.reply_text("You cannot add the reward 'Other'.")
             context.user_data.pop(ADDREWARD_STATE, None)
-            return
+            raise ApplicationHandlerStop
         state['name'] = name
         context.user_data[ADDREWARD_COST_STATE] = state
         context.user_data.pop(ADDREWARD_STATE, None)
@@ -2221,7 +2218,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if name.lower() == "other":
             await update.message.reply_text("You cannot remove the reward 'Other'.")
             context.user_data.pop(REMOVEREWARD_STATE, None)
-            return
+            raise ApplicationHandlerStop
         group_id = state['group_id']
         if remove_reward(group_id, name):
             await update.message.reply_text(f"Reward '{name}' removed.")
@@ -2241,7 +2238,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if not reward:
             await update.message.reply_text("That reward does not exist. The reward selection process has been cancelled. Please start over with /reward if you wish to try again.")
             context.user_data.pop(REWARD_STATE, None)
-            return
+            raise ApplicationHandlerStop
         if reward['name'].lower() == 'other':
             display_name = get_display_name(user_id, update.effective_user.full_name, group_id)
             chat_title = update.effective_chat.title
@@ -2306,7 +2303,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             value = int(update.message.text.strip())
         except ValueError:
             await send_message_and_track(context, update.effective_chat.id, "Please reply with a valid integer number of points to add.")
-            return
+            raise ApplicationHandlerStop
         await add_user_points(state['group_id'], state['target_id'], value, context)
         await send_message_and_track(context, update.effective_chat.id, f"Added {value} points.")
         context.user_data.pop(ADDPOINTS_STATE, None)
@@ -2318,7 +2315,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             value = int(update.message.text.strip())
         except ValueError:
             await send_message_and_track(context, update.effective_chat.id, "Please reply with a valid integer number of points to remove.")
-            return
+            raise ApplicationHandlerStop
         await add_user_points(state['group_id'], state['target_id'], -value, context)
         await send_message_and_track(context, update.effective_chat.id, f"Removed {value} points.")
         context.user_data.pop(REMOVEPOINTS_STATE, None)
@@ -2362,7 +2359,7 @@ async def conversation_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         username = update.message.text.strip()
         if not username.startswith('@'):
             await send_message_and_track(context, update.effective_chat.id, "Please provide a valid @username.")
-            return
+            raise ApplicationHandlerStop
 
         state['target_username'] = username
         context.user_data[ASK_TASK_DESCRIPTION] = state
